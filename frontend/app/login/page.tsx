@@ -22,7 +22,7 @@ export default function LoginPage() {
             summaries, and action items.
           </p>
         </div>
-        <p className="font-mono text-[11px] text-white/40">Aress MeetIQ v2.0</p>
+        <p className="font-mono text-[11px] text-white/40">Aress MeetIQ v1.0</p>
       </section>
       <section className="flex items-center justify-center p-8">
         <div>
