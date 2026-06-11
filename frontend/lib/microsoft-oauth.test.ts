@@ -1,4 +1,4 @@
-import { microsoftOAuthOptions } from "@/lib/microsoft-oauth";
+import { microsoftOAuthOptions, oauthCallbackUrl } from "@/lib/microsoft-oauth";
 
 const options = microsoftOAuthOptions("https://app.example/onboarding");
 
@@ -12,4 +12,10 @@ if (options.scopes !== "openid profile email offline_access User.Read") {
 
 if (options.queryParams?.prompt !== "select_account") {
   throw new Error("Microsoft OAuth should force Microsoft account selection.");
+}
+
+const callbackUrl = oauthCallbackUrl("https://app.example", "/onboarding");
+
+if (callbackUrl !== "https://app.example/auth/callback?next=%2Fonboarding") {
+  throw new Error("OAuth callback URL should route through /auth/callback with the next path encoded.");
 }
