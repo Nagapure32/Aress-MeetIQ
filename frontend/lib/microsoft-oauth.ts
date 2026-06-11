@@ -1,13 +1,3 @@
-export function oauthRedirectOrigin(configuredOrigin: string | undefined, browserOrigin: string) {
-  return (configuredOrigin?.trim() || browserOrigin).replace(/\/+$/, "");
-}
-
-export function oauthCallbackUrl(origin: string, nextPath: string) {
-  const callbackUrl = new URL("/auth/callback", origin);
-  callbackUrl.searchParams.set("next", nextPath.startsWith("/") ? nextPath : `/${nextPath}`);
-  return callbackUrl.toString();
-}
-
 export function microsoftOAuthOptions(redirectTo: string) {
   return {
     redirectTo,
