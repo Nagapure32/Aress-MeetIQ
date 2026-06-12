@@ -354,7 +354,7 @@ NEXT_PUBLIC_APP_NAME=MeetIQ
 NEXT_PUBLIC_APP_URL=https://FRONTEND_URL_FROM_PORTAL
 ```
 
-After Azure creates the frontend URL, set `NEXT_PUBLIC_APP_URL` to that exact URL, rebuild the frontend image, and deploy a new frontend revision. This value is used for Supabase auth callback URLs such as `/login` and `/onboarding`.
+After Azure creates the frontend URL, set `NEXT_PUBLIC_APP_URL` to that exact URL, rebuild the frontend image, and deploy a new frontend revision. This value is used for Supabase auth callback URLs such as `/login` and `/auth/callback`.
 
 ## 12. Update Backend After Frontend URL Exists
 
@@ -385,7 +385,7 @@ https://FRONTEND_URL_FROM_PORTAL
 ```text
 https://FRONTEND_URL_FROM_PORTAL
 https://FRONTEND_URL_FROM_PORTAL/login
-https://FRONTEND_URL_FROM_PORTAL/onboarding
+https://FRONTEND_URL_FROM_PORTAL/auth/callback
 ```
 
 ## 14. Update Microsoft App Registration
@@ -401,8 +401,10 @@ https://YOUR_PROJECT.supabase.co/auth/v1/callback
 The current frontend signs in with Supabase Auth's Azure provider, so Microsoft returns to Supabase first. Supabase then redirects the browser to the frontend URL configured by `redirectTo`, such as:
 
 ```text
-https://FRONTEND_URL_FROM_PORTAL/onboarding
+https://FRONTEND_URL_FROM_PORTAL/auth/callback
 ```
+
+The frontend callback route exchanges Supabase's auth code for session cookies, then redirects the user to `/onboarding`.
 
 Configure the Microsoft client ID and client secret in Supabase Authentication -> Providers -> Azure.
 
