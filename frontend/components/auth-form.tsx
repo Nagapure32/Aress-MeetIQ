@@ -2,11 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import {
-  buildAppRedirectUrl,
-  buildMicrosoftOAuthRedirectUrl,
-  microsoftOAuthOptions,
-} from "@/lib/microsoft-oauth";
+import { buildAppRedirectUrl, microsoftOAuthOptions } from "@/lib/microsoft-oauth";
 import { supabaseBrowserClient } from "@/lib/supabase/client";
 
 type Mode = "login" | "signup";
@@ -53,7 +49,7 @@ export function AuthForm() {
     startTransition(async () => {
       const { error } = await supabaseBrowserClient.auth.signInWithOAuth({
         provider: "azure",
-        options: microsoftOAuthOptions(buildMicrosoftOAuthRedirectUrl()),
+        options: microsoftOAuthOptions(buildAppRedirectUrl("/onboarding")),
       });
 
       if (error) {

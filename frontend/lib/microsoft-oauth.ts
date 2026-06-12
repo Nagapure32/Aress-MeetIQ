@@ -9,13 +9,6 @@ export function buildAppRedirectUrl(
   return baseUrl ? `${baseUrl}/${normalizedPath}` : `/${normalizedPath}`;
 }
 
-export function buildMicrosoftOAuthRedirectUrl(
-  configuredAppUrl = process.env.NEXT_PUBLIC_APP_URL,
-  currentOrigin = typeof window !== "undefined" ? window.location.origin : "",
-) {
-  return buildAppRedirectUrl("/auth/callback", configuredAppUrl, currentOrigin);
-}
-
 export function microsoftOAuthOptions(redirectTo: string) {
   return {
     redirectTo,

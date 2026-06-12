@@ -1,8 +1,4 @@
-import {
-  buildAppRedirectUrl,
-  buildMicrosoftOAuthRedirectUrl,
-  microsoftOAuthOptions,
-} from "@/lib/microsoft-oauth";
+import { buildAppRedirectUrl, microsoftOAuthOptions } from "@/lib/microsoft-oauth";
 
 const options = microsoftOAuthOptions("https://app.example/onboarding");
 
@@ -28,16 +24,4 @@ const originRedirect = buildAppRedirectUrl("/onboarding", undefined, "https://lo
 
 if (originRedirect !== "https://localhost:3000/onboarding") {
   throw new Error("Microsoft OAuth redirects should fall back to the current browser origin.");
-}
-
-const configuredCallbackRedirect = buildMicrosoftOAuthRedirectUrl("https://app.example/", "https://localhost:3000");
-
-if (configuredCallbackRedirect !== "https://app.example/auth/callback") {
-  throw new Error("Microsoft OAuth should return through the production auth callback before protected pages.");
-}
-
-const localCallbackRedirect = buildMicrosoftOAuthRedirectUrl(undefined, "https://localhost:3000");
-
-if (localCallbackRedirect !== "https://localhost:3000/auth/callback") {
-  throw new Error("Microsoft OAuth should only use localhost as a local fallback when no app URL is configured.");
 }
