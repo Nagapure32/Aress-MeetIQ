@@ -1,14 +1,9 @@
-import { microsoftOAuthOptions, microsoftOAuthRedirectUrl } from "@/lib/microsoft-oauth";
+import { microsoftOAuthOptions } from "@/lib/microsoft-oauth";
 
-const redirectUrl = microsoftOAuthRedirectUrl("https://app.example");
-const options = microsoftOAuthOptions(redirectUrl);
+const options = microsoftOAuthOptions("https://app.example/onboarding");
 
-if (redirectUrl !== "https://app.example/auth/callback") {
-  throw new Error("Microsoft OAuth should use the exact server callback URL allowed in Supabase.");
-}
-
-if (options.redirectTo !== redirectUrl) {
-  throw new Error("Microsoft OAuth redirectTo should use the callback URL.");
+if (options.redirectTo !== "https://app.example/onboarding") {
+  throw new Error("Microsoft OAuth redirectTo should use the provided redirect URL.");
 }
 
 if (options.scopes !== "openid profile email offline_access User.Read") {

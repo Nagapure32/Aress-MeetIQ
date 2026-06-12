@@ -1,7 +1,3 @@
-export function microsoftOAuthRedirectUrl(origin: string) {
-  return new URL("/auth/callback", origin).toString();
-}
-
 export function microsoftOAuthOptions(redirectTo: string) {
   return {
     redirectTo,

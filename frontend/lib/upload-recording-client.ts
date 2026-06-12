@@ -1,9 +1,8 @@
 "use client";
 
 import { supabaseBrowserClient } from "@/lib/supabase/client";
-import { requirePublicEnv } from "@/lib/env";
 
-const API_BASE_URL = requirePublicEnv("NEXT_PUBLIC_API_BASE_URL");
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 export type UploadedRecordingResult = {
   status: "processing" | "ready" | "failed";

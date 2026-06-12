@@ -20,11 +20,11 @@ class Settings(BaseSettings):
     app_name: str = Field(default="MeetIQ", alias="APP_NAME")
     app_version: str = "0.1.0"
     app_env: str = Field(default="development", alias="APP_ENV")
-    api_base_url: str = Field(default="", alias="API_BASE_URL")
-    frontend_base_url: str = Field(default="", alias="FRONTEND_BASE_URL")
+    api_base_url: str = Field(default="http://localhost:8000", alias="API_BASE_URL")
+    frontend_base_url: str = Field(default="http://localhost:3000", alias="FRONTEND_BASE_URL")
     teams_bot_base_url: str = Field(default="", alias="TEAMS_BOT_BASE_URL")
     cors_allowed_origins_raw: str = Field(
-        default="",
+        default="http://localhost:3000",
         alias="CORS_ALLOWED_ORIGINS",
     )
 
