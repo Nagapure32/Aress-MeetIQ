@@ -381,7 +381,12 @@ https://FRONTEND_URL_FROM_PORTAL
 ```text
 https://FRONTEND_URL_FROM_PORTAL
 https://FRONTEND_URL_FROM_PORTAL/login
+https://FRONTEND_URL_FROM_PORTAL/auth/callback
 ```
+
+The Microsoft sign-in flow returns to `/auth/callback` first so Next.js can
+exchange the Supabase OAuth code for a session cookie, then sends the user to
+`/onboarding`.
 
 ## 14. Update Microsoft App Registration
 
@@ -390,16 +395,18 @@ In Azure Portal, open Microsoft Entra ID app registration.
 Add redirect URI:
 
 ```text
-https://BACKEND_URL_FROM_PORTAL/api/v1/auth/microsoft/callback
+https://YOUR_PROJECT.supabase.co/auth/v1/callback
 ```
 
-Confirm these values match backend environment variables:
+Use the exact callback URL shown in the Supabase Azure/Microsoft provider
+settings if your Supabase project uses a custom auth domain.
+
+Confirm these values match the Supabase Azure/Microsoft provider settings:
 
 ```text
 MICROSOFT_TENANT_ID
 MICROSOFT_CLIENT_ID
 MICROSOFT_CLIENT_SECRET
-MICROSOFT_REDIRECT_URI
 ```
 
 ## 15. Phase 1 Test Checklist

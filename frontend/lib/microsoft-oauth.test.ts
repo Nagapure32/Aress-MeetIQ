@@ -1,9 +1,14 @@
-import { microsoftOAuthOptions } from "@/lib/microsoft-oauth";
+import { microsoftOAuthOptions, microsoftOAuthRedirectUrl } from "@/lib/microsoft-oauth";
 
-const options = microsoftOAuthOptions("https://app.example/onboarding");
+const redirectUrl = microsoftOAuthRedirectUrl("https://app.example");
+const options = microsoftOAuthOptions(redirectUrl);
 
-if (options.redirectTo !== "https://app.example/onboarding") {
-  throw new Error("Microsoft OAuth redirectTo should use the provided redirect URL.");
+if (redirectUrl !== "https://app.example/auth/callback?next=%2Fonboarding") {
+  throw new Error("Microsoft OAuth should return through the server callback before onboarding.");
+}
+
+if (options.redirectTo !== redirectUrl) {
+  throw new Error("Microsoft OAuth redirectTo should use the callback URL.");
 }
 
 if (options.scopes !== "openid profile email offline_access User.Read") {
