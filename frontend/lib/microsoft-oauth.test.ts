@@ -3,8 +3,8 @@ import { microsoftOAuthOptions, microsoftOAuthRedirectUrl } from "@/lib/microsof
 const redirectUrl = microsoftOAuthRedirectUrl("https://app.example");
 const options = microsoftOAuthOptions(redirectUrl);
 
-if (redirectUrl !== "https://app.example/auth/callback?next=%2Fonboarding") {
-  throw new Error("Microsoft OAuth should return through the server callback before onboarding.");
+if (redirectUrl !== "https://app.example/auth/callback") {
+  throw new Error("Microsoft OAuth should use the exact server callback URL allowed in Supabase.");
 }
 
 if (options.redirectTo !== redirectUrl) {

@@ -1,7 +1,5 @@
-export function microsoftOAuthRedirectUrl(origin: string, nextPath = "/onboarding") {
-  const url = new URL("/auth/callback", origin);
-  url.searchParams.set("next", nextPath);
-  return url.toString();
+export function microsoftOAuthRedirectUrl(origin: string) {
+  return new URL("/auth/callback", origin).toString();
 }
 
 export function microsoftOAuthOptions(redirectTo: string) {
