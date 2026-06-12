@@ -8,6 +8,7 @@ import {
   bootstrapUserWorkspace,
   getMeetingAssistantSettings,
   updateMeetingAssistantSettings,
+  type UserBootstrapPayload,
 } from "@/lib/api";
 import { buildAppRedirectUrl, microsoftOAuthOptions } from "@/lib/microsoft-oauth";
 import { supabaseBrowserClient } from "@/lib/supabase/client";
@@ -31,8 +32,8 @@ export default function OnboardingPage() {
       }
 
       try {
-        await bootstrapUserWorkspace(extractMicrosoftIdentity(session.user));
-        setStatus("connected");
+        await enableMicrosoftCalendarAssistant(extractMicrosoftIdentity(session.user));
+        setStatus("enabled");
         router.replace("/");
         router.refresh();
       } catch {
@@ -68,12 +69,7 @@ export default function OnboardingPage() {
           return;
         }
 
-        await bootstrapUserWorkspace(extractMicrosoftIdentity(session.user));
-        const currentSettings = await getMeetingAssistantSettings();
-        await updateMeetingAssistantSettings({
-          ...currentSettings,
-          auto_join_enabled: true,
-        });
+        await enableMicrosoftCalendarAssistant(extractMicrosoftIdentity(session.user));
         setStatus("enabled");
         setMessage("Calendar assistant enabled for your Microsoft calendar.");
       } catch {
@@ -211,6 +207,15 @@ function extractMicrosoftIdentity(user: {
       asString(identityData.sub) ??
       user.id,
   };
+}
+
+async function enableMicrosoftCalendarAssistant(identity: UserBootstrapPayload) {
+  await bootstrapUserWorkspace(identity);
+  const currentSettings = await getMeetingAssistantSettings();
+  await updateMeetingAssistantSettings({
+    ...currentSettings,
+    auto_join_enabled: true,
+  });
 }
 
 function asString(value: unknown): string | null {

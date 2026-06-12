@@ -3,6 +3,7 @@ import asyncio
 
 class FakeSupabaseGateway:
     def __init__(self) -> None:
+        self.patch_rows: list[dict] | None = None
         self.tables = {
             "meeting_settings": [
                 {
@@ -19,6 +20,8 @@ class FakeSupabaseGateway:
             ]
         }
         self.upserts: list[dict] = []
+        self.upsert_calls: list[tuple[str, dict, str | None]] = []
+        self.patches: list[tuple[str, dict, dict]] = []
 
     async def get(self, path: str, params: dict | None = None) -> list[dict]:
         rows = [row.copy() for row in self.tables[path]]
@@ -34,6 +37,18 @@ class FakeSupabaseGateway:
         on_conflict: str | None = None,
     ) -> list[dict]:
         self.upserts.append(payload.copy())
+        self.upsert_calls.append((path, payload.copy(), on_conflict))
+        return [payload.copy()]
+
+    async def patch(
+        self,
+        path: str,
+        payload: dict,
+        params: dict,
+    ) -> list[dict]:
+        self.patches.append((path, payload.copy(), params.copy()))
+        if self.patch_rows is not None:
+            return [row.copy() for row in self.patch_rows]
         return [payload.copy()]
 
 
@@ -71,4 +86,85 @@ def test_update_meeting_assistant_settings_uses_explicit_user_id(monkeypatch):
     assert result.user_id == "auth-user-id"
     assert fake.upserts[0]["user_id"] == "auth-user-id"
     assert fake.upserts[0]["auto_join_enabled"] is True
+
+
+def test_update_meeting_assistant_settings_enables_calendar_connection_for_auto_join(monkeypatch):
+    from app.api.v1.schemas import MeetingAssistantSettings
+    from app.services import meeting_settings
+
+    fake = FakeSupabaseGateway()
+    monkeypatch.setattr(meeting_settings, "supabase_gateway", fake)
+
+    run(
+        meeting_settings.update_meeting_assistant_settings(
+            MeetingAssistantSettings(auto_join_enabled=True),
+            "auth-user-id",
+            calendar_email="person@example.com",
+        )
+    )
+
+    assert fake.patches == [
+        (
+            "calendar_connections",
+            {
+                "enabled": True,
+                "connection_status": "connected",
+            },
+            {
+                "user_id": "eq.auth-user-id",
+                "provider": "eq.microsoft",
+            },
+        )
+    ]
+
+
+def test_update_meeting_assistant_settings_creates_calendar_connection_when_patch_finds_no_row(
+    monkeypatch,
+):
+    from app.api.v1.schemas import MeetingAssistantSettings
+    from app.services import meeting_settings
+
+    fake = FakeSupabaseGateway()
+    fake.patch_rows = []
+    monkeypatch.setattr(meeting_settings, "supabase_gateway", fake)
+
+    run(
+        meeting_settings.update_meeting_assistant_settings(
+            MeetingAssistantSettings(auto_join_enabled=True),
+            "auth-user-id",
+            calendar_email="person@example.com",
+        )
+    )
+
+    assert fake.upsert_calls[0] == (
+        "calendar_connections",
+        {
+            "user_id": "auth-user-id",
+            "provider": "microsoft",
+            "email": "person@example.com",
+            "enabled": True,
+            "connection_status": "connected",
+        },
+        "user_id,provider",
+    )
+    assert fake.upsert_calls[1][0] == "meeting_settings"
+
+
+def test_update_meeting_assistant_settings_does_not_touch_calendar_connection_when_auto_join_off(
+    monkeypatch,
+):
+    from app.api.v1.schemas import MeetingAssistantSettings
+    from app.services import meeting_settings
+
+    fake = FakeSupabaseGateway()
+    monkeypatch.setattr(meeting_settings, "supabase_gateway", fake)
+
+    run(
+        meeting_settings.update_meeting_assistant_settings(
+            MeetingAssistantSettings(auto_join_enabled=False),
+            "auth-user-id",
+        )
+    )
+
+    assert fake.patches == []
 

@@ -21,6 +21,18 @@ async def ensure_user_workspace(
 ) -> dict[str, str]:
     calendar_status = "connected" if email else "pending"
     calendar_email = email or user_id
+    existing_settings = await supabase_gateway.get(
+        "meeting_settings",
+        params={
+            "select": "*",
+            "user_id": f"eq.{user_id}",
+            "limit": "1",
+        },
+    )
+    meeting_settings = {
+        **DEFAULT_MEETING_SETTINGS,
+        **(existing_settings[0] if existing_settings else {}),
+    }
 
     await supabase_gateway.upsert(
         "profiles",
@@ -34,7 +46,7 @@ async def ensure_user_workspace(
         "meeting_settings",
         {
             "user_id": user_id,
-            **DEFAULT_MEETING_SETTINGS,
+            **meeting_settings,
         },
         on_conflict="user_id",
     )

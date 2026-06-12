@@ -45,8 +45,34 @@ async def get_meeting_assistant_settings(user_id: str | None = None) -> MeetingA
 async def update_meeting_assistant_settings(
     payload: MeetingAssistantSettings,
     user_id: str | None = None,
+    calendar_email: str | None = None,
 ) -> MeetingAssistantSettings:
     user_id = user_id or get_dev_user_id()
+    if payload.auto_join_enabled:
+        calendar_rows = await supabase_gateway.patch(
+            "calendar_connections",
+            {
+                "enabled": True,
+                "connection_status": "connected",
+            },
+            params={
+                "user_id": f"eq.{user_id}",
+                "provider": "eq.microsoft",
+            },
+        )
+        if not calendar_rows:
+            await supabase_gateway.upsert(
+                "calendar_connections",
+                {
+                    "user_id": user_id,
+                    "provider": "microsoft",
+                    "email": calendar_email or user_id,
+                    "enabled": True,
+                    "connection_status": "connected",
+                },
+                on_conflict="user_id,provider",
+            )
+
     rows = await supabase_gateway.upsert(
         "meeting_settings",
         {

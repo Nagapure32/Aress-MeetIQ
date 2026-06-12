@@ -24,7 +24,11 @@ async def update_meeting_assistant_settings(
     payload: MeetingAssistantSettings,
     current_user: CurrentUser = require_current_user,
 ) -> MeetingAssistantSettings:
-    return await save_meeting_assistant_settings(payload, current_user.user_id)
+    return await save_meeting_assistant_settings(
+        payload,
+        current_user.user_id,
+        calendar_email=current_user.email,
+    )
 
 
 @router.get("/transcription", response_model=TranscriptionSettings)
