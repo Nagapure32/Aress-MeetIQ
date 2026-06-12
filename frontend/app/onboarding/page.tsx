@@ -2,6 +2,7 @@
 
 import { CalendarDays } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import {
   bootstrapUserWorkspace,
@@ -15,6 +16,7 @@ import { StatusPill } from "@/components/ui";
 type ConnectionStatus = "idle" | "connected" | "enabled" | "error";
 
 export default function OnboardingPage() {
+  const router = useRouter();
   const [status, setStatus] = useState<ConnectionStatus>("idle");
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -31,12 +33,14 @@ export default function OnboardingPage() {
       try {
         await bootstrapUserWorkspace(extractMicrosoftIdentity(session.user));
         setStatus("connected");
+        router.replace("/");
+        router.refresh();
       } catch {
         setStatus("error");
         setMessage("Could not prepare your Microsoft calendar connection.");
       }
     });
-  }, []);
+  }, [router]);
 
   function connectWithMicrosoft() {
     setMessage(null);
