@@ -1,3 +1,5 @@
+import { requirePublicEnv } from "@/lib/env";
+
 export type DashboardMetric = {
   label: string;
   value: number | string;
@@ -308,7 +310,7 @@ export type ApprovalItem = {
   meeting?: ApprovalMeeting | null;
 };
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+const API_BASE_URL = requirePublicEnv("NEXT_PUBLIC_API_BASE_URL");
 
 async function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers);
