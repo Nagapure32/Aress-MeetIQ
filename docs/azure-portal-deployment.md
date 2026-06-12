@@ -77,6 +77,7 @@ NEXT_PUBLIC_API_BASE_URL
 NEXT_PUBLIC_SUPABASE_URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY
 NEXT_PUBLIC_APP_NAME
+NEXT_PUBLIC_APP_URL
 ```
 
 Add this GitHub repository secret:
@@ -350,7 +351,10 @@ NEXT_PUBLIC_API_BASE_URL=https://BACKEND_URL_FROM_PORTAL
 NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
 NEXT_PUBLIC_APP_NAME=MeetIQ
+NEXT_PUBLIC_APP_URL=https://FRONTEND_URL_FROM_PORTAL
 ```
+
+After Azure creates the frontend URL, set `NEXT_PUBLIC_APP_URL` to that exact URL, rebuild the frontend image, and deploy a new frontend revision. This value is used for Supabase auth callback URLs such as `/login` and `/onboarding`.
 
 ## 12. Update Backend After Frontend URL Exists
 
@@ -381,26 +385,26 @@ https://FRONTEND_URL_FROM_PORTAL
 ```text
 https://FRONTEND_URL_FROM_PORTAL
 https://FRONTEND_URL_FROM_PORTAL/login
+https://FRONTEND_URL_FROM_PORTAL/onboarding
 ```
 
 ## 14. Update Microsoft App Registration
 
 In Azure Portal, open Microsoft Entra ID app registration.
 
-Add redirect URI:
+Add the Supabase Auth callback URL as the Web redirect URI:
 
 ```text
-https://BACKEND_URL_FROM_PORTAL/api/v1/auth/microsoft/callback
+https://YOUR_PROJECT.supabase.co/auth/v1/callback
 ```
 
-Confirm these values match backend environment variables:
+The current frontend signs in with Supabase Auth's Azure provider, so Microsoft returns to Supabase first. Supabase then redirects the browser to the frontend URL configured by `redirectTo`, such as:
 
 ```text
-MICROSOFT_TENANT_ID
-MICROSOFT_CLIENT_ID
-MICROSOFT_CLIENT_SECRET
-MICROSOFT_REDIRECT_URI
+https://FRONTEND_URL_FROM_PORTAL/onboarding
 ```
+
+Configure the Microsoft client ID and client secret in Supabase Authentication -> Providers -> Azure.
 
 ## 15. Phase 1 Test Checklist
 
