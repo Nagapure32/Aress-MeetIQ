@@ -11,6 +11,7 @@ from fastapi import HTTPException, UploadFile, status
 
 from app.core.config import settings
 from app.db.supabase import supabase_gateway
+from app.services.transcript_security import protect_transcript_text
 from app.services.ai_meetings import generate_meeting_intelligence
 from app.services.meeting_chat import index_meeting_transcript
 
@@ -407,7 +408,7 @@ async def _store_transcript_text(meeting_id: str, transcript_text: str) -> list[
                 "speaker": speaker,
                 "source_id": speaker,
                 "language": None,
-                "text": text,
+                **protect_transcript_text(text),
             }
         )
 

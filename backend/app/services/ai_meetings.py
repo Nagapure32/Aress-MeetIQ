@@ -6,6 +6,9 @@ from typing import Any
 
 from fastapi import HTTPException, status
 
+from app.auth.authorization import require_transcript_access
+from app.auth.current_user import CurrentUser
+
 from app.core.config import settings
 from app.db.supabase import supabase_gateway
 from app.services.assignee_resolution import (
@@ -14,6 +17,7 @@ from app.services.assignee_resolution import (
     resolve_assignee,
 )
 from app.services.task_email import TaskEmailResult, send_task_assignment_email
+from app.services.transcript_security import decrypt_transcript_segments
 
 VALID_PRIORITIES = {"low", "medium", "high", "urgent"}
 URGENT_PRIORITY_KEYWORDS = {
@@ -86,7 +90,11 @@ class MeetingAIResult:
 async def generate_meeting_intelligence(
     meeting_id: str,
     user_id: str | None = None,
+    current_user: CurrentUser | None = None,
 ) -> dict[str, Any]:
+    if current_user is not None:
+        await require_transcript_access(current_user, meeting_id)
+        user_id = current_user.user_id
     meeting = await _get_meeting_for_ai(meeting_id, user_id)
     transcript_segments = await _get_transcript_segments(meeting_id)
     if not transcript_segments:
@@ -145,18 +153,20 @@ async def _get_meeting_for_ai(meeting_id: str, user_id: str | None = None) -> di
 
 
 async def _get_transcript_segments(meeting_id: str) -> list[dict[str, Any]]:
-    return await supabase_gateway.get(
+    rows = await supabase_gateway.get(
         "transcript_segments",
         {
             "select": (
                 "id,sequence,speaker,source_id,speaker_participant_id,speaker_aad_user_id,"
-                "speaker_email,speaker_user_principal_name,text,created_at,started_at,ended_at"
+                "speaker_email,speaker_user_principal_name,text,encrypted_text,encryption_alg,"
+                "encryption_key_id,created_at,started_at,ended_at"
             ),
             "meeting_id": f"eq.{meeting_id}",
             "order": "sequence.asc.nullslast,started_at.asc.nullslast,created_at.asc",
             "limit": "1000",
         },
     )
+    return decrypt_transcript_segments(rows)
 
 
 def _run_agno_meeting_agent(

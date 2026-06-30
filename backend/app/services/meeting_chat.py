@@ -8,9 +8,13 @@ from typing import Any
 import httpx
 from fastapi import HTTPException, status
 
+from app.auth.authorization import require_transcript_access
+from app.auth.current_user import CurrentUser
+
 from app.core.config import settings
 from app.db.supabase import supabase_gateway
 from app.services.meeting_settings import get_dev_user_id
+from app.services.transcript_security import decrypt_transcript_segments
 
 MAX_CHUNK_CHARS = 1800
 SEARCH_TOP_K = 6
@@ -274,10 +278,16 @@ search_client = _get_search_client()
 async def index_meeting_transcript(
     meeting_id: str,
     user_id: str | None = None,
+    current_user: CurrentUser | None = None,
 ) -> dict[str, Any]:
     _ensure_ai_chat_enabled()
-    user_id = user_id or get_dev_user_id()
-    meeting = await _get_owned_meeting(meeting_id, user_id)
+    if current_user is not None:
+        await require_transcript_access(current_user, meeting_id)
+        user_id = current_user.user_id
+        meeting = await _get_meeting(meeting_id)
+    else:
+        user_id = user_id or get_dev_user_id()
+        meeting = await _get_owned_meeting(meeting_id, user_id)
     segments = await _get_transcript_segments(meeting_id)
     if not segments:
         result = await _store_index_status(
@@ -339,9 +349,14 @@ async def index_meeting_transcript(
 async def get_meeting_chat_messages(
     meeting_id: str,
     user_id: str | None = None,
+    current_user: CurrentUser | None = None,
 ) -> list[dict[str, Any]]:
-    user_id = user_id or get_dev_user_id()
-    await _get_owned_meeting(meeting_id, user_id)
+    if current_user is not None:
+        await require_transcript_access(current_user, meeting_id)
+        user_id = current_user.user_id
+    else:
+        user_id = user_id or get_dev_user_id()
+        await _get_owned_meeting(meeting_id, user_id)
     rows = await supabase_gateway.get(
         "ai_chat_messages",
         {
@@ -358,9 +373,14 @@ async def get_meeting_chat_messages(
 async def get_meeting_chat_index_status(
     meeting_id: str,
     user_id: str | None = None,
+    current_user: CurrentUser | None = None,
 ) -> dict[str, Any]:
-    user_id = user_id or get_dev_user_id()
-    await _get_owned_meeting(meeting_id, user_id)
+    if current_user is not None:
+        await require_transcript_access(current_user, meeting_id)
+        user_id = current_user.user_id
+    else:
+        user_id = user_id or get_dev_user_id()
+        await _get_owned_meeting(meeting_id, user_id)
     rows = await supabase_gateway.get(
         "meeting_ai_indexes",
         {
@@ -385,6 +405,7 @@ async def chat_with_meeting_transcript(
     meeting_id: str,
     message: str,
     user_id: str | None = None,
+    current_user: CurrentUser | None = None,
 ) -> dict[str, Any]:
     _ensure_ai_chat_enabled()
     question = " ".join(message.split())
@@ -394,8 +415,13 @@ async def chat_with_meeting_transcript(
             detail="Message cannot be empty.",
         )
 
-    user_id = user_id or get_dev_user_id()
-    meeting = await _get_owned_meeting(meeting_id, user_id)
+    if current_user is not None:
+        await require_transcript_access(current_user, meeting_id)
+        user_id = current_user.user_id
+        meeting = await _get_meeting(meeting_id)
+    else:
+        user_id = user_id or get_dev_user_id()
+        meeting = await _get_owned_meeting(meeting_id, user_id)
     route = _route_meeting_chat_question(question)
     routed_question = route.normalized_question or question
     if route.retrieval == "meeting_wide":
@@ -814,6 +840,19 @@ def _format_speaker_list(speakers: list[str]) -> str:
     return f"{', '.join(unique_speakers[:-1])}, and {unique_speakers[-1]}"
 
 
+
+async def _get_meeting(meeting_id: str) -> dict[str, Any]:
+    rows = await supabase_gateway.get(
+        "meetings",
+        {
+            "select": "id,user_id,subject,start_time,end_time,organizer_email",
+            "id": f"eq.{meeting_id}",
+            "limit": "1",
+        },
+    )
+    if not rows:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Meeting not found.")
+    return rows[0]
 async def _get_owned_meeting(meeting_id: str, user_id: str) -> dict[str, Any]:
     rows = await supabase_gateway.get(
         "meetings",
@@ -830,15 +869,19 @@ async def _get_owned_meeting(meeting_id: str, user_id: str) -> dict[str, Any]:
 
 
 async def _get_transcript_segments(meeting_id: str) -> list[dict[str, Any]]:
-    return await supabase_gateway.get(
+    rows = await supabase_gateway.get(
         "transcript_segments",
         {
-            "select": "id,sequence,speaker,source_id,language,text,started_at,ended_at,created_at",
+            "select": (
+                "id,sequence,speaker,source_id,language,text,encrypted_text,encryption_alg,"
+                "encryption_key_id,started_at,ended_at,created_at"
+            ),
             "meeting_id": f"eq.{meeting_id}",
             "order": "sequence.asc.nullslast,started_at.asc.nullslast,created_at.asc",
             "limit": "1000",
         },
     )
+    return decrypt_transcript_segments(rows)
 
 
 def _build_transcript_chunks(

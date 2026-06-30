@@ -47,6 +47,18 @@ class Settings(BaseSettings):
     enable_ai_summaries: bool = Field(default=False, alias="ENABLE_AI_SUMMARIES")
     enable_ai_chat: bool = Field(default=False, alias="ENABLE_AI_CHAT")
     enable_bot_internal_apis: bool = Field(default=True, alias="ENABLE_BOT_INTERNAL_APIS")
+    enable_transcript_encryption: bool = Field(
+        default=False,
+        alias="ENABLE_TRANSCRIPT_ENCRYPTION",
+    )
+    transcript_encryption_key: str = Field(
+        default="",
+        alias="TRANSCRIPT_ENCRYPTION_KEY",
+    )
+    transcript_encryption_key_id: str = Field(
+        default="local-v1",
+        alias="TRANSCRIPT_ENCRYPTION_KEY_ID",
+    )
     azure_openai_api_key: str = Field(default="", alias="AZURE_OPENAI_API_KEY")
     azure_openai_endpoint: str = Field(default="", alias="AZURE_OPENAI_ENDPOINT")
     azure_openai_api_version: str = Field(default="2024-02-01", alias="AZURE_OPENAI_API_VERSION")

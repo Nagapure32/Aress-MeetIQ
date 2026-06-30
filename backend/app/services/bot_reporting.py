@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from fastapi import HTTPException, status
 
 from app.db.supabase import supabase_gateway
+from app.services.transcript_security import protect_transcript_text
 from app.internal.schemas import (
     BotApprovalDecisionRequest,
     BotMeetingStatusRequest,
@@ -141,7 +142,7 @@ async def record_bot_transcript(payload: BotTranscriptRequest) -> list[dict]:
                 "speaker_email": segment.speaker_email,
                 "speaker_user_principal_name": segment.speaker_user_principal_name,
                 "language": segment.language,
-                "text": segment.text,
+                **protect_transcript_text(segment.text),
                 "started_at": _isoformat(segment.started_at) if segment.started_at else None,
                 "ended_at": _isoformat(segment.ended_at) if segment.ended_at else None,
             }

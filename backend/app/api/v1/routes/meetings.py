@@ -84,7 +84,7 @@ async def get_meeting_transcript(
 ) -> dict[str, str | list]:
     return {
         "meeting_id": meeting_id,
-        "segments": await list_meeting_transcript(meeting_id, current_user.user_id),
+        "segments": await list_meeting_transcript(meeting_id, current_user=current_user),
     }
 
 @router.get("/{meeting_id}/summary")
@@ -92,7 +92,7 @@ async def get_meeting_summary(
     meeting_id: str,
     current_user: CurrentUser = require_current_user,
 ) -> dict[str, str | list]:
-    summary = await load_meeting_summary(meeting_id, current_user.user_id)
+    summary = await load_meeting_summary(meeting_id, current_user=current_user)
     return summary or {"meeting_id": meeting_id, "summary": "", "key_points": [], "decisions": []}
 
 @router.get("/{meeting_id}/tasks")
@@ -110,7 +110,7 @@ async def create_meeting_ai_intelligence(
     meeting_id: str,
     current_user: CurrentUser = require_current_user,
 ) -> dict:
-    return await generate_meeting_intelligence(meeting_id, current_user.user_id)
+    return await generate_meeting_intelligence(meeting_id, current_user=current_user)
 
 @router.get("/{meeting_id}/chat/messages")
 async def list_meeting_chat_messages(
@@ -119,7 +119,7 @@ async def list_meeting_chat_messages(
 ) -> dict[str, str | list]:
     return {
         "meeting_id": meeting_id,
-        "items": await get_meeting_chat_messages(meeting_id, current_user.user_id),
+        "items": await get_meeting_chat_messages(meeting_id, current_user=current_user),
     }
 
 @router.get("/{meeting_id}/chat/index-status", response_model=MeetingChatIndexResponse)
@@ -127,14 +127,14 @@ async def get_meeting_chat_index(
     meeting_id: str,
     current_user: CurrentUser = require_current_user,
 ) -> dict:
-    return await get_meeting_chat_index_status(meeting_id, current_user.user_id)
+    return await get_meeting_chat_index_status(meeting_id, current_user=current_user)
 
 @router.post("/{meeting_id}/chat/index", response_model=MeetingChatIndexResponse)
 async def create_meeting_chat_index(
     meeting_id: str,
     current_user: CurrentUser = require_current_user,
 ) -> dict:
-    return await index_meeting_transcript(meeting_id, current_user.user_id)
+    return await index_meeting_transcript(meeting_id, current_user=current_user)
 
 @router.post("/{meeting_id}/chat", response_model=MeetingChatResponse)
 async def create_meeting_chat_response(
@@ -142,4 +142,4 @@ async def create_meeting_chat_response(
     payload: MeetingChatRequest,
     current_user: CurrentUser = require_current_user,
 ) -> dict:
-    return await chat_with_meeting_transcript(meeting_id, payload.message, current_user.user_id)
+    return await chat_with_meeting_transcript(meeting_id, payload.message, current_user=current_user)

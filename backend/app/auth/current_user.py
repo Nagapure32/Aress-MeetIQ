@@ -14,6 +14,9 @@ from app.core.config import settings
 class CurrentUser(BaseModel):
     user_id: str
     email: str | None = None
+    tenant_id: str | None = None
+    aad_user_id: str | None = None
+    roles: list[str] = []
     auth_source: Literal["supabase", "dev"]
 
 async def get_current_user(authorization: str | None = Header(default=None)) -> CurrentUser:
@@ -64,7 +67,9 @@ def _current_user_from_supabase_jwt(token: str) -> CurrentUser:
 
     payload = _decode_json_segment(payload_segment)
     exp = payload.get("exp")
-    if isinstance(exp, int) and datetime.now(UTC).timestamp() >= exp:
+    if not isinstance(exp, int):
+        raise _invalid_token()
+    if datetime.now(UTC).timestamp() >= exp:
         raise _invalid_token()
 
     user_id = payload.get("sub")
@@ -72,9 +77,14 @@ def _current_user_from_supabase_jwt(token: str) -> CurrentUser:
         raise _invalid_token()
 
     email = payload.get("email")
+    app_metadata = payload.get("app_metadata") if isinstance(payload.get("app_metadata"), dict) else {}
+    user_metadata = payload.get("user_metadata") if isinstance(payload.get("user_metadata"), dict) else {}
     return CurrentUser(
         user_id=user_id,
         email=email if isinstance(email, str) else None,
+        tenant_id=_first_string(user_metadata.get("tenant_id"), app_metadata.get("tenant_id"), payload.get("tenant_id")),
+        aad_user_id=_first_string(user_metadata.get("aad_user_id"), app_metadata.get("aad_user_id"), payload.get("aad_user_id")),
+        roles=_extract_roles(payload),
         auth_source="supabase",
     )
 
@@ -106,12 +116,44 @@ async def _current_user_from_supabase_auth_api(
         raise jwt_error
 
     email = data.get("email")
+    app_metadata = data.get("app_metadata") if isinstance(data.get("app_metadata"), dict) else {}
+    user_metadata = data.get("user_metadata") if isinstance(data.get("user_metadata"), dict) else {}
     return CurrentUser(
         user_id=user_id,
         email=email if isinstance(email, str) else None,
+        tenant_id=_first_string(user_metadata.get("tenant_id"), app_metadata.get("tenant_id"), data.get("tenant_id")),
+        aad_user_id=_first_string(user_metadata.get("aad_user_id"), app_metadata.get("aad_user_id"), data.get("aad_user_id")),
+        roles=_extract_roles(data),
         auth_source="supabase",
     )
 
+
+def _extract_roles(data: dict) -> list[str]:
+    roles: list[str] = []
+    for container_name in ("app_metadata", "user_metadata"):
+        container = data.get(container_name)
+        if not isinstance(container, dict):
+            continue
+        roles.extend(_coerce_roles(container.get("roles")))
+        roles.extend(_coerce_roles(container.get("role")))
+    roles.extend(_coerce_roles(data.get("roles")))
+    roles.extend(_coerce_roles(data.get("role")))
+    return sorted(set(roles))
+
+
+def _coerce_roles(value) -> list[str]:
+    if isinstance(value, str):
+        return [value] if value else []
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, str) and item]
+    return []
+
+
+def _first_string(*values) -> str | None:
+    for value in values:
+        if isinstance(value, str) and value:
+            return value
+    return None
 def _decode_json_segment(segment: str) -> dict:
     try:
         decoded = _decode_segment(segment)

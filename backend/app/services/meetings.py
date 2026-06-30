@@ -1,7 +1,11 @@
 from typing import Any
 
+from app.auth.authorization import require_transcript_access
+from app.auth.current_user import CurrentUser
+
 from app.db.supabase import supabase_gateway
 from app.services.meeting_settings import get_dev_user_id
+from app.services.transcript_security import decrypt_transcript_segments
 
 
 async def list_user_meetings(
@@ -53,25 +57,35 @@ async def get_user_meeting(meeting_id: str, user_id: str | None = None) -> dict[
 async def list_meeting_transcript(
     meeting_id: str,
     user_id: str | None = None,
+    current_user: CurrentUser | None = None,
 ) -> list[dict[str, Any]]:
-    if not await get_user_meeting(meeting_id, user_id):
+    if current_user is not None:
+        await require_transcript_access(current_user, meeting_id)
+    elif not await get_user_meeting(meeting_id, user_id):
         return []
-    return await _safe_get(
+    rows = await _safe_get(
         "transcript_segments",
         {
-            "select": "id,sequence,speaker,source_id,language,text,started_at,ended_at,created_at",
+            "select": (
+                "id,sequence,speaker,source_id,language,text,encrypted_text,encryption_alg,"
+                "encryption_key_id,started_at,ended_at,created_at"
+            ),
             "meeting_id": f"eq.{meeting_id}",
             "order": "sequence.asc.nullslast,started_at.asc.nullslast,created_at.asc",
             "limit": "1000",
         },
     )
+    return decrypt_transcript_segments(rows)
 
 
 async def get_meeting_summary(
     meeting_id: str,
     user_id: str | None = None,
+    current_user: CurrentUser | None = None,
 ) -> dict[str, Any] | None:
-    if not await get_user_meeting(meeting_id, user_id):
+    if current_user is not None:
+        await require_transcript_access(current_user, meeting_id)
+    elif not await get_user_meeting(meeting_id, user_id):
         return None
     rows = await _safe_get(
         "meeting_summaries",

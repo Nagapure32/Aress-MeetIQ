@@ -54,6 +54,9 @@ def test_current_user_uses_dev_user_when_no_bearer_token_and_fallback_enabled(mo
     assert response.json() == {
         "user_id": "dev-user-id",
         "email": None,
+        "tenant_id": None,
+        "aad_user_id": None,
+        "roles": [],
         "auth_source": "dev",
     }
 
@@ -95,6 +98,9 @@ def test_current_user_accepts_valid_supabase_jwt(monkeypatch):
     assert response.json() == {
         "user_id": "auth-user-id",
         "email": "person@example.com",
+        "tenant_id": None,
+        "aad_user_id": None,
+        "roles": [],
         "auth_source": "supabase",
     }
 
@@ -113,3 +119,52 @@ def test_current_user_rejects_invalid_signature(monkeypatch):
     assert response.status_code == 401
     assert response.json()["detail"] == "Invalid authentication token."
 
+
+
+def test_current_user_parses_roles_and_identity_claims(monkeypatch):
+    from app.auth import current_user
+
+    secret = "test-secret"
+    expires_at = int((datetime.now(UTC) + timedelta(minutes=5)).timestamp())
+    token = _jwt(
+        {
+            "sub": "auth-user-id",
+            "email": "person@example.com",
+            "exp": expires_at,
+            "aud": "authenticated",
+            "app_metadata": {"roles": ["super_admin"]},
+            "user_metadata": {"tenant_id": "tenant-1", "aad_user_id": "aad-1"},
+        },
+        secret,
+    )
+    monkeypatch.setattr(current_user.settings, "supabase_jwt_secret", secret)
+    monkeypatch.setattr(current_user.settings, "auth_required", True)
+    monkeypatch.setattr(current_user.settings, "allow_dev_user_fallback", False)
+
+    response = _client().get("/whoami", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "user_id": "auth-user-id",
+        "email": "person@example.com",
+        "tenant_id": "tenant-1",
+        "aad_user_id": "aad-1",
+        "roles": ["super_admin"],
+        "auth_source": "supabase",
+    }
+
+
+def test_current_user_rejects_token_missing_exp(monkeypatch):
+    from app.auth import current_user
+
+    token = _jwt(
+        {"sub": "auth-user-id", "email": "person@example.com", "aud": "authenticated"},
+        "test-secret",
+    )
+    monkeypatch.setattr(current_user.settings, "supabase_jwt_secret", "test-secret")
+    monkeypatch.setattr(current_user.settings, "auth_required", True)
+    monkeypatch.setattr(current_user.settings, "allow_dev_user_fallback", False)
+
+    response = _client().get("/whoami", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 401

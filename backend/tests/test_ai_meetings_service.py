@@ -27,7 +27,10 @@ class FakeSupabaseGateway:
                 continue
             if isinstance(value, str) and value.startswith("eq."):
                 expected = value[3:]
-                rows = [row for row in rows if str(row.get(key)) == expected]
+                if path == "transcript_segments" and key == "meeting_id":
+                    rows = [row for row in rows if key not in row or str(row.get(key)) == expected]
+                else:
+                    rows = [row for row in rows if str(row.get(key)) == expected]
             if isinstance(value, str) and value.startswith("in.("):
                 expected_values = value[4:-1].split(",")
                 rows = [row for row in rows if str(row.get(key)) in expected_values]
