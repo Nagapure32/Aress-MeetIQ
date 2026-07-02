@@ -1,2 +1,0 @@
-"""MeetIQ FastAPI backend."""
-
