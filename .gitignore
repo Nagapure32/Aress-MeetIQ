@@ -11,9 +11,6 @@ __pycache__/
 .ruff_cache/
 .venv/
 venv/
-backend_n1/
-backend_o/
-uploaded_recordings/
 dist/
 build/
 *.egg-info/
@@ -22,6 +19,7 @@ build/
 node_modules/
 .next/
 out/
+*.tsbuildinfo
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -32,4 +30,6 @@ pnpm-debug.log*
 Thumbs.db
 .idea/
 .vscode/
-
+.superpowers/
+.codex-next-dev*.log
+uploaded_recordings/
