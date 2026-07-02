@@ -8,10 +8,10 @@ ENV PORT=8000
 
 RUN python -m pip install --no-cache-dir --upgrade pip
 
-COPY pyproject.toml ./
+COPY requirements.txt ./
 COPY app ./app
 
-RUN python -m pip install --no-cache-dir .
+RUN python -m pip install --no-cache-dir -r requirements.txt
 
 EXPOSE 8000
 
