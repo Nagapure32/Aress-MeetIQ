@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends
 
 from app.internal.security import require_bot_api_key
 from app.internal.schemas import (
@@ -62,8 +62,9 @@ async def upsert_meeting(payload: BotMeetingUpsertRequest) -> dict[str, str]:
 async def update_meeting_status(
     meeting_id: str,
     payload: BotMeetingStatusRequest,
+    background_tasks: BackgroundTasks,
 ) -> dict[str, str]:
-    row = await update_bot_meeting_status(meeting_id, payload)
+    row = await update_bot_meeting_status(meeting_id, payload, background_tasks)
     return {
         "status": "accepted",
         "meeting_id": row["id"],

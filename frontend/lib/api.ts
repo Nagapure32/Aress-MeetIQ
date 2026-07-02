@@ -244,6 +244,14 @@ export type UserBootstrapResult = {
   calendar_connection_status: string;
 };
 
+export type UserOnboardingStatus = {
+  user_id: string;
+  onboarding_completed: boolean;
+  onboarding_completed_at?: string | null;
+  calendar_connection_status?: string | null;
+  auto_join_enabled: boolean;
+};
+
 export type TaskStatus = "todo" | "in_progress" | "blocked" | "done";
 export type TaskPriority = "low" | "medium" | "high" | "urgent";
 
@@ -259,6 +267,7 @@ export type TaskItem = {
   organization_id?: string | null;
   owner_user_id: string;
   assignee_user_id?: string | null;
+  assignee_email?: string | null;
   meeting_id?: string | null;
   action_item_id?: string | null;
   title: string;
@@ -381,7 +390,8 @@ export async function getMeetingAssistantSettings(): Promise<MeetingAssistantSet
   });
 
   if (!response.ok) {
-    throw new Error(`Meeting assistant settings request failed: ${response.status}`);
+    const detail = await readErrorDetail(response);
+    throw new Error(detail ?? `Meeting assistant settings request failed: ${response.status}`);
   }
 
   return response.json();
@@ -399,7 +409,8 @@ export async function updateMeetingAssistantSettings(
   });
 
   if (!response.ok) {
-    throw new Error(`Meeting assistant settings update failed: ${response.status}`);
+    const detail = await readErrorDetail(response);
+    throw new Error(detail ?? `Meeting assistant settings update failed: ${response.status}`);
   }
 
   return response.json();
@@ -419,6 +430,32 @@ export async function bootstrapUserWorkspace(
   if (!response.ok) {
     const detail = await readErrorDetail(response);
     throw new Error(detail ?? `User bootstrap request failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function getUserOnboardingStatus(): Promise<UserOnboardingStatus> {
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/onboarding/status`, {
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const detail = await readErrorDetail(response);
+    throw new Error(detail ?? `User onboarding status request failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function completeUserOnboarding(): Promise<UserOnboardingStatus> {
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/onboarding/complete`, {
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    const detail = await readErrorDetail(response);
+    throw new Error(detail ?? `User onboarding completion request failed: ${response.status}`);
   }
 
   return response.json();

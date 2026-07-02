@@ -63,7 +63,7 @@ export function UploadRecordingControl() {
     <div className="relative">
       <button
         className={[
-          "flex h-8 items-center gap-2 rounded-[10px] border border-line bg-white px-4",
+          "flex h-9 items-center gap-2 rounded-md border border-line bg-white px-4",
           "text-xs font-medium text-ink transition hover:bg-[#faf9f5]",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand",
           "focus-visible:ring-offset-2 focus-visible:ring-offset-white disabled:opacity-60",

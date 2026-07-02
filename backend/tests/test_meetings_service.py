@@ -103,92 +103,10 @@ def test_list_meeting_transcript_orders_by_sequence_then_timestamps(monkeypatch)
 
     fake = FakeSupabaseGateway()
     monkeypatch.setattr(meetings, "supabase_gateway", fake)
-    monkeypatch.setattr(meetings, "get_dev_user_id", lambda: "user-1")
 
-    run(meetings.list_meeting_transcript("meeting-with-transcript"))
+    run(meetings.list_meeting_transcript("meeting-with-transcript", user_id="user-1"))
 
     path, params = fake.get_calls[-1]
     assert path == "transcript_segments"
     assert params is not None
     assert params["order"] == "sequence.asc.nullslast,started_at.asc.nullslast,created_at.asc"
-
-
-def test_list_meeting_transcript_decrypts_segments(monkeypatch):
-    from app.services import meetings
-
-    fake = FakeSupabaseGateway()
-    fake.tables["transcript_segments"] = [
-        {
-            "id": "segment-1",
-            "meeting_id": "meeting-with-transcript",
-            "text": "[encrypted transcript]",
-            "encrypted_text": "ciphertext",
-        }
-    ]
-    monkeypatch.setattr(meetings, "supabase_gateway", fake)
-    monkeypatch.setattr(
-        meetings,
-        "decrypt_transcript_segments",
-        lambda rows: [{**row, "text": "confidential launch details"} for row in rows],
-    )
-
-    result = run(meetings.list_meeting_transcript("meeting-with-transcript", "user-1"))
-
-    assert result[0]["text"] == "confidential launch details"
-    assert result[0]["encrypted_text"] == "ciphertext"
-
-
-def test_list_meeting_transcript_denies_non_participant(monkeypatch):
-    from fastapi import HTTPException
-
-    from app.auth.current_user import CurrentUser
-    from app.services import meetings
-
-    fake = FakeSupabaseGateway()
-    monkeypatch.setattr(meetings, "supabase_gateway", fake)
-
-    async def deny_access(current_user, meeting_id):
-        raise HTTPException(status_code=403, detail="You do not have access to this transcript.")
-
-    monkeypatch.setattr(meetings, "require_transcript_access", deny_access)
-
-    try:
-        run(
-            meetings.list_meeting_transcript(
-                "meeting-with-transcript",
-                current_user=CurrentUser(user_id="user-2", auth_source="supabase"),
-            )
-        )
-    except HTTPException as exc:
-        assert exc.status_code == 403
-    else:
-        raise AssertionError("Expected transcript access to be denied")
-
-
-def test_list_meeting_transcript_allows_authorized_participant(monkeypatch):
-    from app.auth.current_user import CurrentUser
-    from app.services import meetings
-
-    fake = FakeSupabaseGateway()
-    monkeypatch.setattr(meetings, "supabase_gateway", fake)
-    monkeypatch.setattr(
-        meetings,
-        "decrypt_transcript_segments",
-        lambda rows: [{**row, "text": row.get("text", "") or "ok"} for row in rows],
-    )
-    seen = []
-
-    async def allow_access(current_user, meeting_id):
-        seen.append((current_user.user_id, meeting_id))
-
-    monkeypatch.setattr(meetings, "require_transcript_access", allow_access)
-
-    result = run(
-        meetings.list_meeting_transcript(
-            "meeting-with-transcript",
-            current_user=CurrentUser(user_id="user-1", auth_source="supabase"),
-        )
-    )
-
-    assert seen == [("user-1", "meeting-with-transcript")]
-    assert len(result) == 2

@@ -130,7 +130,6 @@ export function Button({
   );
 }
 
-
 export function EmptyBlock({ title, text }: { title: string; text: string }) {
   return (
     <div className="rounded-lg border border-dashed border-line bg-brand-soft/60 p-5 text-center">

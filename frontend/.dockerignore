@@ -1,8 +1,0 @@
-node_modules
-.next
-.env
-.env.local
-.codex-next-dev.log
-.codex-next-dev.err.log
-tsconfig.tsbuildinfo
-npm-debug.log*

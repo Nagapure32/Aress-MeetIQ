@@ -7,6 +7,7 @@ from email.message import EmailMessage
 from typing import Any
 
 from app.core.config import settings
+from app.services.meeting_content_security import decrypt_task_content
 
 logger = logging.getLogger(__name__)
 
@@ -31,12 +32,60 @@ def send_task_assignment_email(
     if not _smtp_configured():
         return TaskEmailResult(False, "smtp_not_configured")
 
+    task = decrypt_task_content(task)
     message = EmailMessage()
     from_address = settings.task_smtp_from_address or settings.task_smtp_username
     message["From"] = f"{settings.task_smtp_from_name} <{from_address}>"
     message["To"] = to_email
     message["Subject"] = f"New task assigned: {task.get('title')}"
     message.set_content(_html_body(assignee_name, task, meeting), subtype="html")
+
+    try:
+        logger.warning(
+            "Task email SMTP config: host=%s port=%s tls=%s username=%s from=%s "
+            "password_length=%s password_sha256=%s",
+            settings.task_smtp_host,
+            settings.task_smtp_port,
+            settings.task_smtp_enable_tls,
+            settings.task_smtp_username,
+            from_address,
+            len(settings.task_smtp_password),
+            _safe_fingerprint(settings.task_smtp_password),
+        )
+        with smtplib.SMTP(settings.task_smtp_host, settings.task_smtp_port) as smtp:
+            if settings.task_smtp_enable_tls:
+                smtp.starttls()
+            smtp.login(settings.task_smtp_username, settings.task_smtp_password)
+            smtp.send_message(message)
+    except Exception as exc:
+        return TaskEmailResult(False, "smtp_error", str(exc))
+
+    return TaskEmailResult(True, "sent")
+
+
+def send_task_assignment_digest_email(
+    to_email: str | None,
+    assignee_name: str | None,
+    tasks: list[dict[str, Any]],
+    meeting: dict[str, Any] | None,
+) -> TaskEmailResult:
+    if not settings.task_email_enabled:
+        return TaskEmailResult(False, "disabled")
+    if not to_email:
+        return TaskEmailResult(False, "missing_recipient")
+    if not tasks:
+        return TaskEmailResult(False, "missing_tasks")
+    if not _smtp_configured():
+        return TaskEmailResult(False, "smtp_not_configured")
+
+    tasks = [decrypt_task_content(task) for task in tasks]
+    meeting_title = meeting_subject(meeting)
+    message = EmailMessage()
+    from_address = settings.task_smtp_from_address or settings.task_smtp_username
+    message["From"] = f"{settings.task_smtp_from_name} <{from_address}>"
+    message["To"] = to_email
+    message["Subject"] = f"{len(tasks)} new tasks assigned from {meeting_title}"
+    message.set_content(_digest_html_body(assignee_name, tasks, meeting), subtype="html")
 
     try:
         logger.warning(
@@ -105,6 +154,38 @@ def _html_body(
     {html.escape(str(task.get('description') or 'No description'))}<br>
     <strong>Priority:</strong> {html.escape(str(task.get('priority') or 'medium'))}<br>
     <strong>Due date:</strong> {html.escape(str(task.get('due_date') or 'Not set'))}</p>
+    """
+
+
+def _digest_html_body(
+    assignee_name: str | None,
+    tasks: list[dict[str, Any]],
+    meeting: dict[str, Any] | None,
+) -> str:
+    task_items = "\n".join(_digest_task_item(task) for task in tasks)
+    tasks_url = f"{settings.frontend_base_url.rstrip('/')}/tasks"
+    task_count = len(tasks)
+    task_label = "task" if task_count == 1 else "tasks"
+    return f"""
+    <p>Hi {html.escape(assignee_name or 'there')},</p>
+    <p>You have {task_count} new {task_label} from
+    <strong>{html.escape(meeting_subject(meeting))}</strong>.</p>
+    <ul>
+    {task_items}
+    </ul>
+    <p><a href="{html.escape(tasks_url)}">View tasks</a></p>
+    """
+
+
+def _digest_task_item(task: dict[str, Any]) -> str:
+    return f"""
+        <li>
+            <strong>{html.escape(str(task.get('title') or 'Untitled task'))}</strong><br>
+            <strong>Description:</strong>
+            {html.escape(str(task.get('description') or 'No description'))}<br>
+            <strong>Priority:</strong> {html.escape(str(task.get('priority') or 'medium'))}<br>
+            <strong>Due date:</strong> {html.escape(str(task.get('due_date') or 'Not set'))}
+        </li>
     """
 
 

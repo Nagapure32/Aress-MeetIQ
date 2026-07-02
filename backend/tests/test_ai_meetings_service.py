@@ -3,6 +3,8 @@ import asyncio
 import pytest
 from fastapi import HTTPException
 
+TEST_FERNET_KEY = "NclLF63UI69npfL-oPId6Fo0eKOHFP1etq4MeKsmDCg="
+
 
 class FakeSupabaseGateway:
     def __init__(self) -> None:
@@ -27,10 +29,11 @@ class FakeSupabaseGateway:
                 continue
             if isinstance(value, str) and value.startswith("eq."):
                 expected = value[3:]
-                if path == "transcript_segments" and key == "meeting_id":
-                    rows = [row for row in rows if key not in row or str(row.get(key)) == expected]
-                else:
-                    rows = [row for row in rows if str(row.get(key)) == expected]
+                rows = [
+                    row
+                    for row in rows
+                    if key not in row or str(row.get(key)) == expected
+                ]
             if isinstance(value, str) and value.startswith("in.("):
                 expected_values = value[4:-1].split(",")
                 rows = [row for row in rows if str(row.get(key)) in expected_values]
@@ -265,6 +268,150 @@ def test_generate_meeting_intelligence_creates_tasks_for_calendar_user(monkeypat
     assert fake.tables["task_assignees"] == []
 
 
+def test_generate_meeting_intelligence_encrypts_generated_summary_and_tasks(monkeypatch):
+    from app.services import ai_meetings
+
+    fake = FakeSupabaseGateway()
+    fake.tables["meetings"] = [
+        {
+            "id": "meeting-1",
+            "user_id": "calendar-user-1",
+            "subject": "Roadmap sync",
+        }
+    ]
+    fake.tables["transcript_segments"] = [
+        {
+            "id": "segment-1",
+            "speaker": "Asha",
+            "text": "Ravi will send the pricing notes tomorrow.",
+            "created_at": "2026-05-20T10:00:00Z",
+        }
+    ]
+    ai_result = ai_meetings.MeetingAIResult(
+        summary="The team agreed to send pricing notes.",
+        key_points=["Pricing follow-up is needed."],
+        decisions=["Send pricing notes to the client."],
+        tasks=[
+            ai_meetings.MeetingAITask(
+                title="Send pricing notes",
+                description="Send the pricing notes discussed in Roadmap sync.",
+                priority="high",
+            )
+        ],
+    )
+    monkeypatch.setattr(ai_meetings.settings, "enable_transcript_encryption", True)
+    monkeypatch.setattr(ai_meetings.settings, "transcript_encryption_key", TEST_FERNET_KEY)
+    monkeypatch.setattr(ai_meetings.settings, "transcript_encryption_key_id", "test-key")
+    monkeypatch.setattr(ai_meetings, "supabase_gateway", fake)
+    monkeypatch.setattr(ai_meetings, "_run_agno_meeting_agent", lambda *_: ai_result)
+
+    result = run(ai_meetings.generate_meeting_intelligence("meeting-1"))
+
+    summary_row = fake.tables["meeting_summaries"][0]
+    assert summary_row["summary"] == "[encrypted meeting summary]"
+    assert summary_row["key_points"] == []
+    assert summary_row["decisions"] == []
+    assert summary_row["encrypted_summary"]
+    assert summary_row["encrypted_key_points"]
+    assert summary_row["encrypted_decisions"]
+    assert summary_row["encryption_key_id"] == "test-key"
+    assert result["summary"]["summary"] == ai_result.summary
+    assert result["summary"]["key_points"] == ai_result.key_points
+    assert result["summary"]["decisions"] == ai_result.decisions
+
+    action_item_row = fake.tables["action_items"][0]
+    assert action_item_row["title"] == "[encrypted task title]"
+    assert action_item_row["description"] == "[encrypted task description]"
+    assert action_item_row["encrypted_title"]
+    assert action_item_row["encrypted_description"]
+    assert action_item_row["title_lookup_hash"]
+
+    task_row = fake.tables["tasks"][0]
+    assert task_row["title"] == "[encrypted task title]"
+    assert task_row["description"] == "[encrypted task description]"
+    assert task_row["encrypted_title"]
+    assert task_row["encrypted_description"]
+    assert task_row["title_lookup_hash"]
+    assert result["tasks"][0]["title"] == "Send pricing notes"
+    assert result["tasks"][0]["description"] == "Send the pricing notes discussed in Roadmap sync."
+    assert "encrypted_title" not in result["tasks"][0]
+
+
+def test_generate_meeting_intelligence_detects_encrypted_duplicate_tasks(monkeypatch):
+    from app.services import ai_meetings
+    from app.services.meeting_content_security import protect_task_content
+
+    fake = FakeSupabaseGateway()
+    fake.tables["meetings"] = [
+        {
+            "id": "meeting-1",
+            "user_id": "calendar-user-1",
+            "subject": "Roadmap sync",
+        }
+    ]
+    fake.tables["transcript_segments"] = [
+        {
+            "id": "segment-1",
+            "speaker": "Asha",
+            "text": "Ravi will send the pricing notes tomorrow.",
+            "created_at": "2026-05-20T10:00:00Z",
+        }
+    ]
+    monkeypatch.setattr(ai_meetings.settings, "enable_transcript_encryption", True)
+    monkeypatch.setattr(ai_meetings.settings, "transcript_encryption_key", TEST_FERNET_KEY)
+    monkeypatch.setattr(ai_meetings.settings, "transcript_encryption_key_id", "test-key")
+    fake.tables["action_items"] = [
+        {
+            "id": "action_items-1",
+            "meeting_id": "meeting-1",
+            "assignee_user_id": "calendar-user-1",
+            **protect_task_content(
+                "Send pricing notes",
+                "Send the pricing notes discussed in Roadmap sync.",
+            ),
+            "priority": "high",
+            "due_date": None,
+        }
+    ]
+    fake.tables["tasks"] = [
+        {
+            "id": "tasks-1",
+            "owner_user_id": "calendar-user-1",
+            "assignee_user_id": "calendar-user-1",
+            "meeting_id": "meeting-1",
+            "action_item_id": "action_items-1",
+            **protect_task_content(
+                "Send pricing notes",
+                "Send the pricing notes discussed in Roadmap sync.",
+            ),
+            "status": "todo",
+            "priority": "high",
+            "due_date": None,
+        }
+    ]
+    ai_result = ai_meetings.MeetingAIResult(
+        summary="The team agreed to send pricing notes.",
+        key_points=[],
+        decisions=[],
+        tasks=[
+            ai_meetings.MeetingAITask(
+                title="Send pricing notes",
+                description="Send the pricing notes discussed in Roadmap sync.",
+                priority="high",
+            )
+        ],
+    )
+    monkeypatch.setattr(ai_meetings, "supabase_gateway", fake)
+    monkeypatch.setattr(ai_meetings, "_run_agno_meeting_agent", lambda *_: ai_result)
+
+    result = run(ai_meetings.generate_meeting_intelligence("meeting-1"))
+
+    assert result["created_action_items_count"] == 0
+    assert result["skipped_action_items_count"] == 1
+    assert result["created_tasks_count"] == 0
+    assert result["skipped_tasks_count"] == 1
+
+
 def test_generate_meeting_intelligence_infers_missing_assignee_from_evidence(monkeypatch):
     from app.services import ai_meetings
 
@@ -333,14 +480,10 @@ def test_generate_meeting_intelligence_infers_missing_assignee_from_evidence(mon
     )
     assert fake.tables["tasks"][0]["assignee_user_id"] == "user-ravi"
     assert fake.tables["tasks"][0]["assignee_email"] == "ravi@example.com"
-    assert fake.tables["task_assignees"] == [
-        {
-            "task_id": "tasks-1",
-            "user_id": "user-ravi",
-            "role": "primary",
-            "created_at": fake.tables["task_assignees"][0]["created_at"],
-        }
-    ]
+    assert fake.tables["task_assignees"][0]["task_id"] == "tasks-1"
+    assert fake.tables["task_assignees"][0]["user_id"] == "user-ravi"
+    assert fake.tables["task_assignees"][0]["role"] == "primary"
+    assert fake.tables["task_assignees"][0]["created_at"]
     assert sent_emails[0]["to_email"] == "ravi@example.com"
 
 
@@ -922,7 +1065,7 @@ def test_generate_meeting_intelligence_skips_email_when_assignee_ambiguous(monke
 
     assert result["created_tasks_count"] == 1
     assert fake.tables["tasks"][0]["assignee_user_id"] is None
-    assert fake.tables["tasks"][0]["notification_status"] == "not_sent"
+    assert fake.tables["tasks"][0]["notification_status"] == "missing_recipient"
     assert sent == []
 
 
@@ -980,7 +1123,7 @@ def test_generate_meeting_intelligence_does_not_assign_first_person_without_evid
     assert result["created_tasks_count"] == 1
     assert fake.tables["action_items"][0]["assignee_resolution_status"] == "unresolved"
     assert fake.tables["tasks"][0]["assignee_user_id"] is None
-    assert fake.tables["tasks"][0]["notification_status"] == "not_sent"
+    assert fake.tables["tasks"][0]["notification_status"] == "missing_recipient"
     assert sent == []
 
 

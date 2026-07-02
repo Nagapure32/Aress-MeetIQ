@@ -3,6 +3,8 @@ import asyncio
 import pytest
 from fastapi import HTTPException
 
+TEST_FERNET_KEY = "NclLF63UI69npfL-oPId6Fo0eKOHFP1etq4MeKsmDCg="
+
 
 class FakeSupabaseGateway:
     def __init__(self) -> None:
@@ -91,6 +93,43 @@ def test_create_task_stores_multiple_assignees(monkeypatch):
         "user-1",
         "user-2",
     ]
+
+
+def test_create_task_encrypts_content_when_enabled(monkeypatch):
+    from app.api.v1.schemas import TaskCreate
+    from app.core.config import settings
+    from app.services import tasks
+
+    fake = FakeSupabaseGateway()
+    monkeypatch.setattr(settings, "enable_transcript_encryption", True)
+    monkeypatch.setattr(settings, "transcript_encryption_key", TEST_FERNET_KEY)
+    monkeypatch.setattr(settings, "transcript_encryption_key_id", "test-key")
+    monkeypatch.setattr(tasks, "supabase_gateway", fake)
+    monkeypatch.setattr(tasks, "get_dev_user_id", lambda: "owner-1")
+
+    result = run(
+        tasks.create_user_task(
+            TaskCreate(
+                title="Prepare client demo",
+                description="Build demo data and screenshots",
+                status="todo",
+                priority="high",
+                due_date="2026-05-24",
+                assignee_user_ids=[],
+            )
+        )
+    )
+
+    stored = fake.tables["tasks"][0]
+    assert stored["title"] == "[encrypted task title]"
+    assert stored["description"] == "[encrypted task description]"
+    assert stored["encrypted_title"]
+    assert stored["encrypted_description"]
+    assert stored["title_lookup_hash"]
+    assert stored["encryption_key_id"] == "test-key"
+    assert result["title"] == "Prepare client demo"
+    assert result["description"] == "Build demo data and screenshots"
+    assert "encrypted_title" not in result
 
 
 def test_create_task_rejects_non_iso_due_date(monkeypatch):

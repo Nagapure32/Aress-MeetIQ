@@ -5,6 +5,11 @@ from fastapi import HTTPException, status
 
 from app.api.v1.schemas import TaskCreate, TaskUpdate
 from app.db.supabase import supabase_gateway
+from app.services.meeting_content_security import (
+    decrypt_task_contents,
+    protect_task_content,
+    protect_task_update_content,
+)
 from app.services.meeting_settings import get_dev_user_id
 
 VALID_STATUSES = {"todo", "in_progress", "blocked", "done"}
@@ -60,8 +65,7 @@ async def create_user_task(payload: TaskCreate, user_id: str | None = None) -> d
             "assignee_user_id": assignee_user_ids[0] if assignee_user_ids else None,
             "meeting_id": payload.meeting_id,
             "action_item_id": payload.action_item_id,
-            "title": payload.title.strip(),
-            "description": payload.description,
+            **protect_task_content(payload.title.strip(), payload.description),
             "status": payload.status,
             "priority": payload.priority,
             "due_date": _serialize_date(payload.due_date),
@@ -105,6 +109,7 @@ async def update_user_task(
         assignee_user_ids = None
 
     if update_payload:
+        update_payload = protect_task_update_content(update_payload)
         update_payload["updated_at"] = datetime.now(UTC).isoformat()
         rows = await supabase_gateway.patch(
             "tasks",
@@ -147,7 +152,8 @@ async def _get_owned_task(task_id: str, user_id: str) -> dict[str, Any]:
 
 
 async def _hydrate_tasks(tasks: list[dict[str, Any]], user_id: str) -> list[dict[str, Any]]:
-    tasks_with_assignees = await _with_assignees(tasks)
+    decrypted_tasks = decrypt_task_contents(tasks)
+    tasks_with_assignees = await _with_assignees(decrypted_tasks)
     return await _with_meetings(tasks_with_assignees, user_id)
 
 

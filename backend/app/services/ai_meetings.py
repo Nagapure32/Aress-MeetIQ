@@ -16,6 +16,13 @@ from app.services.assignee_resolution import (
     is_first_person_assignee,
     resolve_assignee,
 )
+from app.services.meeting_content_security import (
+    decrypt_meeting_summary_content,
+    decrypt_task_content,
+    protect_meeting_summary_content,
+    protect_task_content,
+    title_lookup_keys,
+)
 from app.services.task_email import TaskEmailResult, send_task_assignment_email
 from app.services.transcript_security import decrypt_transcript_segments
 
@@ -351,15 +358,23 @@ async def _store_summary(meeting_id: str, ai_result: MeetingAIResult) -> dict[st
         "meeting_summaries",
         {
             "meeting_id": meeting_id,
-            "summary": ai_result.summary,
-            "key_points": ai_result.key_points,
-            "decisions": ai_result.decisions,
+            **protect_meeting_summary_content(
+                ai_result.summary,
+                ai_result.key_points,
+                ai_result.decisions,
+            ),
             "model": f"agno:{settings.azure_openai_deployment}",
             "updated_at": now,
         },
         on_conflict="meeting_id",
     )
-    return rows[0] if rows else {"meeting_id": meeting_id, "summary": ai_result.summary}
+    fallback = {
+        "meeting_id": meeting_id,
+        "summary": ai_result.summary,
+        "key_points": ai_result.key_points,
+        "decisions": ai_result.decisions,
+    }
+    return decrypt_meeting_summary_content(rows[0]) if rows else fallback
 
 
 async def _store_action_items(
@@ -377,7 +392,7 @@ async def _store_action_items(
     action_items = []
     skipped_count = 0
     for task in ai_tasks:
-        existing = existing_by_title.get(_normalize_title(task.title))
+        existing = _find_existing_by_title(existing_by_title, task.title)
         if existing:
             enriched_existing = await _enrich_action_item_assignee(
                 existing,
@@ -413,8 +428,7 @@ async def _store_action_items(
                 "assignee_resolution_status": resolution.status,
                 "assignee_resolution_confidence": resolution.confidence,
                 "assignee_resolution_reason": resolution.reason,
-                "title": task.title,
-                "description": task.description,
+                **protect_task_content(task.title, task.description),
                 "status": "open",
                 "priority": priority,
                 "due_date": due_date,
@@ -424,7 +438,8 @@ async def _store_action_items(
             }
         )
     created = await supabase_gateway.insert("action_items", payloads) if payloads else []
-    return [*action_items, *created], len(created), skipped_count
+    decrypted_created = [decrypt_task_content(row) for row in created]
+    return [*action_items, *decrypted_created], len(created), skipped_count
 
 
 def _resolve_task_assignee(
@@ -534,7 +549,7 @@ async def _enrich_action_item_assignee(
         params={"id": f"eq.{action_item['id']}", "limit": "1"},
     )
     if rows:
-        return rows[0]
+        return decrypt_task_content(rows[0])
     action_item.update(update_payload)
     return action_item
 
@@ -553,7 +568,7 @@ async def _store_tasks_for_calendar_user(
     skipped_count = 0
     is_uploaded_recording = meeting.get("source_type") == "uploaded_recording"
     for action_item in action_items:
-        existing_task = existing_by_title.get(_normalize_title(action_item["title"]))
+        existing_task = _find_existing_by_title(existing_by_title, action_item["title"])
         if existing_task:
             await _enrich_existing_task_assignment(existing_task, action_item, meeting)
             skipped_count += 1
@@ -572,8 +587,7 @@ async def _store_tasks_for_calendar_user(
                 "notification_status": "not_required" if is_uploaded_recording else "not_sent",
                 "meeting_id": meeting["id"],
                 "action_item_id": action_item_id,
-                "title": action_item["title"],
-                "description": action_item.get("description"),
+                **protect_task_content(action_item["title"], action_item.get("description")),
                 "status": "todo",
                 "priority": _normalize_priority(action_item.get("priority")),
                 "due_date": _normalize_due_date(
@@ -586,6 +600,7 @@ async def _store_tasks_for_calendar_user(
         )
     tasks = await supabase_gateway.insert("tasks", task_payloads) if task_payloads else []
     if tasks:
+        tasks = [decrypt_task_content(task) for task in tasks]
         task_assignees = [
             {
                 "task_id": task["id"],
@@ -628,7 +643,7 @@ async def _enrich_existing_task_assignment(
             update_payload,
             params={"id": f"eq.{task['id']}", "limit": "1"},
         )
-        task.update(rows[0] if rows else update_payload)
+        task.update(decrypt_task_content(rows[0]) if rows else update_payload)
 
     if meeting.get("source_type") == "uploaded_recording":
         await _mark_task_notification_status(task, "not_required")
@@ -692,11 +707,32 @@ async def _existing_by_title(path: str, meeting_id: str) -> dict[str, dict[str, 
             "meeting_id": f"eq.{meeting_id}",
         },
     )
-    return {_normalize_title(row.get("title")): row for row in rows if row.get("title")}
+    existing: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        decrypted = decrypt_task_content(row, strip=False)
+        for key in _title_lookup_keys_from_row(decrypted):
+            existing[key] = decrypted
+    return existing
 
 
-def _normalize_title(value: str | None) -> str:
-    return " ".join((value or "").lower().split())
+def _find_existing_by_title(
+    existing_by_title: dict[str, dict[str, Any]],
+    title: str | None,
+) -> dict[str, Any] | None:
+    for key in title_lookup_keys(title):
+        existing = existing_by_title.get(key)
+        if existing:
+            return existing
+    return None
+
+
+def _title_lookup_keys_from_row(row: dict[str, Any]) -> list[str]:
+    keys = []
+    title_hash = row.get("title_lookup_hash")
+    if title_hash:
+        keys.append(f"hash:{title_hash}")
+    keys.extend(title_lookup_keys(row.get("title")))
+    return keys
 
 
 def _normalize_priority(value: Any) -> str:

@@ -3,6 +3,7 @@ from typing import Any
 
 from app.api.v1.schemas import DashboardMetric, DashboardOverview
 from app.db.supabase import supabase_gateway
+from app.services.meeting_content_security import decrypt_task_contents
 from app.services.meeting_settings import get_dev_user_id
 
 
@@ -46,7 +47,11 @@ async def get_dashboard_overview(user_id: str | None = None) -> DashboardOvervie
     all_tasks = await _get_rows(
         "tasks",
         {
-            "select": "id,title,status,priority,due_date,meeting_id,created_at",
+            "select": (
+                "id,title,encrypted_title,encryption_alg,encryption_key_id,"
+                "title_lookup_hash,title_lookup_hash_alg,status,priority,due_date,"
+                "meeting_id,created_at"
+            ),
             "or": f"(owner_user_id.eq.{user_id},assignee_user_id.eq.{user_id})",
             "order": "created_at.desc",
             "limit": "1000",
@@ -55,7 +60,10 @@ async def get_dashboard_overview(user_id: str | None = None) -> DashboardOvervie
     open_tasks = await _get_rows(
         "tasks",
         {
-            "select": "id,title,status,priority,due_date,meeting_id",
+            "select": (
+                "id,title,encrypted_title,encryption_alg,encryption_key_id,"
+                "title_lookup_hash,title_lookup_hash_alg,status,priority,due_date,meeting_id"
+            ),
             "or": f"(owner_user_id.eq.{user_id},assignee_user_id.eq.{user_id})",
             "status": "neq.done",
             "order": "created_at.desc",
@@ -97,6 +105,8 @@ async def get_dashboard_overview(user_id: str | None = None) -> DashboardOvervie
 
     meeting_hours = _meeting_hours(meetings_this_week)
     bot_status = _format_bot_status(heartbeats[0] if heartbeats else None, now)
+    all_tasks = decrypt_task_contents(all_tasks)
+    open_tasks = decrypt_task_contents(open_tasks)
     task_summary = _task_summary(all_tasks, today_start)
     attention_items = _attention_items(all_tasks, pending_approvals, now)
     recent_activity = _recent_activity(bot_events, upcoming_meetings)

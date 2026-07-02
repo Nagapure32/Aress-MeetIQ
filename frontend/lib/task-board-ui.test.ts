@@ -1,4 +1,5 @@
 import {
+  assigneeDisplayText,
   buildTaskSummary,
   filterTasks,
   formatCompactDate,
@@ -59,3 +60,24 @@ assert(filtered.length === 1 && filtered[0]?.id === "task-2", "Search should fil
 assert(isTaskOverdue(tasks[0], new Date("2026-05-29T12:00:00Z")), "Open past-due task should be overdue.");
 assert(!isTaskOverdue(tasks[2], new Date("2026-05-29T12:00:00Z")), "Done tasks should not be overdue.");
 assert(formatCompactDate("2026-05-29").includes("May"), "Compact dates should be readable.");
+
+assert(
+  assigneeDisplayText({
+    ...tasks[0],
+    assignee_email: "external.assignee@example.com",
+  }) === "external.assignee@example.com",
+  "Email-only assignees should display instead of Unassigned.",
+);
+
+assert(
+  filterTasks(
+    [
+      {
+        ...tasks[0],
+        assignee_email: "external.assignee@example.com",
+      },
+    ],
+    { query: "external.assignee", status: "all", priority: "all" },
+  ).length === 1,
+  "Search should include email-only assignees.",
+);

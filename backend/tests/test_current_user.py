@@ -4,7 +4,6 @@ import hmac
 import json
 from datetime import UTC, datetime, timedelta
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -44,6 +43,7 @@ def _client() -> TestClient:
 def test_current_user_uses_dev_user_when_no_bearer_token_and_fallback_enabled(monkeypatch):
     from app.auth import current_user
 
+    monkeypatch.setattr(current_user.settings, "app_env", "development")
     monkeypatch.setattr(current_user.settings, "dev_user_id", "dev-user-id")
     monkeypatch.setattr(current_user.settings, "auth_required", False)
     monkeypatch.setattr(current_user.settings, "allow_dev_user_fallback", True)
@@ -54,9 +54,6 @@ def test_current_user_uses_dev_user_when_no_bearer_token_and_fallback_enabled(mo
     assert response.json() == {
         "user_id": "dev-user-id",
         "email": None,
-        "tenant_id": None,
-        "aad_user_id": None,
-        "roles": [],
         "auth_source": "dev",
     }
 
@@ -67,6 +64,20 @@ def test_current_user_rejects_missing_token_when_auth_required(monkeypatch):
     monkeypatch.setattr(current_user.settings, "dev_user_id", "dev-user-id")
     monkeypatch.setattr(current_user.settings, "auth_required", True)
     monkeypatch.setattr(current_user.settings, "allow_dev_user_fallback", False)
+
+    response = _client().get("/whoami")
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Authentication is required."
+
+
+def test_current_user_rejects_dev_fallback_outside_development(monkeypatch):
+    from app.auth import current_user
+
+    monkeypatch.setattr(current_user.settings, "app_env", "production")
+    monkeypatch.setattr(current_user.settings, "dev_user_id", "dev-user-id")
+    monkeypatch.setattr(current_user.settings, "auth_required", False)
+    monkeypatch.setattr(current_user.settings, "allow_dev_user_fallback", True)
 
     response = _client().get("/whoami")
 
@@ -89,6 +100,8 @@ def test_current_user_accepts_valid_supabase_jwt(monkeypatch):
         secret,
     )
     monkeypatch.setattr(current_user.settings, "supabase_jwt_secret", secret)
+    monkeypatch.setattr(current_user.settings, "supabase_url", "")
+    monkeypatch.setattr(current_user.settings, "supabase_anon_key", "")
     monkeypatch.setattr(current_user.settings, "auth_required", True)
     monkeypatch.setattr(current_user.settings, "allow_dev_user_fallback", False)
 
@@ -98,9 +111,6 @@ def test_current_user_accepts_valid_supabase_jwt(monkeypatch):
     assert response.json() == {
         "user_id": "auth-user-id",
         "email": "person@example.com",
-        "tenant_id": None,
-        "aad_user_id": None,
-        "roles": [],
         "auth_source": "supabase",
     }
 
@@ -111,6 +121,8 @@ def test_current_user_rejects_invalid_signature(monkeypatch):
     expires_at = int((datetime.now(UTC) + timedelta(minutes=5)).timestamp())
     token = _jwt({"sub": "auth-user-id", "exp": expires_at}, "wrong-secret")
     monkeypatch.setattr(current_user.settings, "supabase_jwt_secret", "expected-secret")
+    monkeypatch.setattr(current_user.settings, "supabase_url", "")
+    monkeypatch.setattr(current_user.settings, "supabase_anon_key", "")
     monkeypatch.setattr(current_user.settings, "auth_required", True)
     monkeypatch.setattr(current_user.settings, "allow_dev_user_fallback", False)
 
@@ -120,8 +132,7 @@ def test_current_user_rejects_invalid_signature(monkeypatch):
     assert response.json()["detail"] == "Invalid authentication token."
 
 
-
-def test_current_user_parses_roles_and_identity_claims(monkeypatch):
+def test_current_user_accepts_expected_issuer_when_supabase_url_is_configured(monkeypatch):
     from app.auth import current_user
 
     secret = "test-secret"
@@ -132,12 +143,13 @@ def test_current_user_parses_roles_and_identity_claims(monkeypatch):
             "email": "person@example.com",
             "exp": expires_at,
             "aud": "authenticated",
-            "app_metadata": {"roles": ["super_admin"]},
-            "user_metadata": {"tenant_id": "tenant-1", "aad_user_id": "aad-1"},
+            "iss": "https://project.supabase.co/auth/v1",
         },
         secret,
     )
     monkeypatch.setattr(current_user.settings, "supabase_jwt_secret", secret)
+    monkeypatch.setattr(current_user.settings, "supabase_url", "https://project.supabase.co")
+    monkeypatch.setattr(current_user.settings, "supabase_anon_key", "")
     monkeypatch.setattr(current_user.settings, "auth_required", True)
     monkeypatch.setattr(current_user.settings, "allow_dev_user_fallback", False)
 
@@ -147,24 +159,66 @@ def test_current_user_parses_roles_and_identity_claims(monkeypatch):
     assert response.json() == {
         "user_id": "auth-user-id",
         "email": "person@example.com",
-        "tenant_id": "tenant-1",
-        "aad_user_id": "aad-1",
-        "roles": ["super_admin"],
         "auth_source": "supabase",
     }
 
 
-def test_current_user_rejects_token_missing_exp(monkeypatch):
+def test_current_user_rejects_token_without_exp(monkeypatch):
     from app.auth import current_user
 
-    token = _jwt(
-        {"sub": "auth-user-id", "email": "person@example.com", "aud": "authenticated"},
-        "test-secret",
-    )
+    token = _jwt({"sub": "auth-user-id", "aud": "authenticated"}, "test-secret")
     monkeypatch.setattr(current_user.settings, "supabase_jwt_secret", "test-secret")
+    monkeypatch.setattr(current_user.settings, "supabase_url", "")
+    monkeypatch.setattr(current_user.settings, "supabase_anon_key", "")
     monkeypatch.setattr(current_user.settings, "auth_required", True)
     monkeypatch.setattr(current_user.settings, "allow_dev_user_fallback", False)
 
     response = _client().get("/whoami", headers={"Authorization": f"Bearer {token}"})
 
     assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid authentication token."
+
+
+def test_current_user_rejects_token_with_wrong_audience(monkeypatch):
+    from app.auth import current_user
+
+    expires_at = int((datetime.now(UTC) + timedelta(minutes=5)).timestamp())
+    token = _jwt(
+        {"sub": "auth-user-id", "exp": expires_at, "aud": "anon"},
+        "test-secret",
+    )
+    monkeypatch.setattr(current_user.settings, "supabase_jwt_secret", "test-secret")
+    monkeypatch.setattr(current_user.settings, "supabase_url", "")
+    monkeypatch.setattr(current_user.settings, "supabase_anon_key", "")
+    monkeypatch.setattr(current_user.settings, "auth_required", True)
+    monkeypatch.setattr(current_user.settings, "allow_dev_user_fallback", False)
+
+    response = _client().get("/whoami", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid authentication token."
+
+
+def test_current_user_rejects_token_with_wrong_issuer_when_supabase_url_is_configured(monkeypatch):
+    from app.auth import current_user
+
+    expires_at = int((datetime.now(UTC) + timedelta(minutes=5)).timestamp())
+    token = _jwt(
+        {
+            "sub": "auth-user-id",
+            "exp": expires_at,
+            "aud": "authenticated",
+            "iss": "https://other-project.supabase.co/auth/v1",
+        },
+        "test-secret",
+    )
+    monkeypatch.setattr(current_user.settings, "supabase_jwt_secret", "test-secret")
+    monkeypatch.setattr(current_user.settings, "supabase_url", "https://project.supabase.co")
+    monkeypatch.setattr(current_user.settings, "supabase_anon_key", "")
+    monkeypatch.setattr(current_user.settings, "auth_required", True)
+    monkeypatch.setattr(current_user.settings, "allow_dev_user_fallback", False)
+
+    response = _client().get("/whoami", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid authentication token."

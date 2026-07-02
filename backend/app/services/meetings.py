@@ -4,6 +4,10 @@ from app.auth.authorization import require_transcript_access
 from app.auth.current_user import CurrentUser
 
 from app.db.supabase import supabase_gateway
+from app.services.meeting_content_security import (
+    decrypt_meeting_summary_content,
+    decrypt_task_contents,
+)
 from app.services.meeting_settings import get_dev_user_id
 from app.services.transcript_security import decrypt_transcript_segments
 
@@ -90,12 +94,15 @@ async def get_meeting_summary(
     rows = await _safe_get(
         "meeting_summaries",
         {
-            "select": "id,summary,key_points,decisions,model,created_at,updated_at",
+            "select": (
+                "id,summary,key_points,decisions,encrypted_summary,encrypted_key_points,"
+                "encrypted_decisions,encryption_alg,encryption_key_id,model,created_at,updated_at"
+            ),
             "meeting_id": f"eq.{meeting_id}",
             "limit": "1",
         },
     )
-    return rows[0] if rows else None
+    return decrypt_meeting_summary_content(rows[0]) if rows else None
 
 
 async def list_meeting_tasks(
@@ -103,18 +110,21 @@ async def list_meeting_tasks(
     user_id: str | None = None,
 ) -> list[dict[str, Any]]:
     user_id = user_id or get_dev_user_id()
-    return await _safe_get(
+    rows = await _safe_get(
         "tasks",
         {
             "select": (
-                "id,title,description,status,priority,due_date,meeting_id,action_item_id,"
-                "created_at,updated_at"
+                "id,title,description,encrypted_title,encrypted_description,encryption_alg,"
+                "encryption_key_id,title_lookup_hash,title_lookup_hash_alg,status,priority,"
+                "due_date,meeting_id,action_item_id,created_at,updated_at"
             ),
             "meeting_id": f"eq.{meeting_id}",
             "owner_user_id": f"eq.{user_id}",
             "order": "created_at.desc",
         },
     )
+    return decrypt_task_contents(rows)
+
 
 async def _safe_get(path: str, params: dict[str, Any]) -> list[dict[str, Any]]:
     try:

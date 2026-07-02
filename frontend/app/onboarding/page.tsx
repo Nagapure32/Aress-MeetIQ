@@ -2,22 +2,19 @@
 
 import { CalendarDays } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import {
   bootstrapUserWorkspace,
   getMeetingAssistantSettings,
   updateMeetingAssistantSettings,
-  type UserBootstrapPayload,
 } from "@/lib/api";
-import { buildAppRedirectUrl, microsoftOAuthOptions } from "@/lib/microsoft-oauth";
+import { microsoftOAuthOptions } from "@/lib/microsoft-oauth";
 import { supabaseBrowserClient } from "@/lib/supabase/client";
 import { StatusPill } from "@/components/ui";
 
 type ConnectionStatus = "idle" | "connected" | "enabled" | "error";
 
 export default function OnboardingPage() {
-  const router = useRouter();
   const [status, setStatus] = useState<ConnectionStatus>("idle");
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -32,23 +29,21 @@ export default function OnboardingPage() {
       }
 
       try {
-        await enableMicrosoftCalendarAssistant(extractMicrosoftIdentity(session.user));
-        setStatus("enabled");
-        router.replace("/");
-        router.refresh();
+        await bootstrapUserWorkspace(extractMicrosoftIdentity(session.user));
+        setStatus("connected");
       } catch {
         setStatus("error");
         setMessage("Could not prepare your Microsoft calendar connection.");
       }
     });
-  }, [router]);
+  }, []);
 
   function connectWithMicrosoft() {
     setMessage(null);
     startTransition(async () => {
       const { error } = await supabaseBrowserClient.auth.signInWithOAuth({
         provider: "azure",
-        options: microsoftOAuthOptions(buildAppRedirectUrl("/onboarding")),
+        options: microsoftOAuthOptions(`${window.location.origin}/onboarding`),
       });
       if (error) {
         setStatus("error");
@@ -69,7 +64,12 @@ export default function OnboardingPage() {
           return;
         }
 
-        await enableMicrosoftCalendarAssistant(extractMicrosoftIdentity(session.user));
+        await bootstrapUserWorkspace(extractMicrosoftIdentity(session.user));
+        const currentSettings = await getMeetingAssistantSettings();
+        await updateMeetingAssistantSettings({
+          ...currentSettings,
+          auto_join_enabled: true,
+        });
         setStatus("enabled");
         setMessage("Calendar assistant enabled for your Microsoft calendar.");
       } catch {
@@ -207,15 +207,6 @@ function extractMicrosoftIdentity(user: {
       asString(identityData.sub) ??
       user.id,
   };
-}
-
-async function enableMicrosoftCalendarAssistant(identity: UserBootstrapPayload) {
-  await bootstrapUserWorkspace(identity);
-  const currentSettings = await getMeetingAssistantSettings();
-  await updateMeetingAssistantSettings({
-    ...currentSettings,
-    auto_join_enabled: true,
-  });
 }
 
 function asString(value: unknown): string | null {
