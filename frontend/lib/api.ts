@@ -35,6 +35,7 @@ export type DashboardMeeting = {
   bot_status?: string | null;
   approval_status?: string | null;
   organizer_email?: string | null;
+  source_type?: string | null;
 };
 
 export type DashboardTask = {
@@ -163,6 +164,13 @@ export type ManualJoinResult = {
   state?: string | null;
   join_mode?: string | null;
   media_mode?: string | null;
+  message: string;
+};
+
+export type BotLeaveResult = {
+  status: string;
+  meeting_id: string;
+  state?: string | null;
   message: string;
 };
 
@@ -618,6 +626,17 @@ export async function manualJoinMeeting(payload: ManualJoinPayload): Promise<Man
   if (!response.ok) {
     const detail = await readErrorDetail(response);
     throw new Error(detail ?? `Manual join failed: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function leaveMeetingBot(meetingId: string): Promise<BotLeaveResult> {
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/meetings/${meetingId}/bot/leave`, {
+    method: "POST",
+  });
+  if (!response.ok) {
+    const detail = await readErrorDetail(response);
+    throw new Error(detail ?? `Bot leave request failed: ${response.status}`);
   }
   return response.json();
 }

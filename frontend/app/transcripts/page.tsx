@@ -6,6 +6,7 @@ import { EmptyBlock, PageHeader, StatusPill } from "@/components/ui";
 import type { Meeting } from "@/lib/api";
 import { listTranscriptReadyMeetings } from "@/lib/api";
 import { getCurrentMeetingStatus } from "@/lib/dashboard-ui";
+import { getMeetingSourceLabel, isUploadedMeetingSource } from "@/lib/meeting-source";
 
 export const dynamic = "force-dynamic";
 
@@ -75,16 +76,14 @@ function TranscriptRow({ meeting }: { meeting: Meeting }) {
       </div>
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-2">
-          {meeting.source_type === "upload" ? (
+          {isUploadedMeetingSource(meeting.source_type) ? (
             <FileText size={13} className="shrink-0 text-brand-dark" />
           ) : (
             <Video size={13} className="shrink-0 text-muted" />
           )}
           <p className="truncate text-sm font-medium text-ink">{meeting.subject}</p>
         </div>
-        <p className="mt-1 truncate text-xs text-muted">
-          {meeting.source_type === "upload" ? "Uploaded recording" : "Calendar meeting"}
-        </p>
+        <p className="mt-1 truncate text-xs text-muted">{getMeetingSourceLabel(meeting.source_type)}</p>
       </div>
       <p className="font-mono text-[11px] text-muted">
         {formatTranscriptLineCount(meeting.transcript_segment_count)}

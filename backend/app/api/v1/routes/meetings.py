@@ -1,6 +1,7 @@
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 
 from app.api.v1.schemas import (
+    BotLeaveResponse,
     ManualJoinRequest,
     ManualJoinResponse,
     MeetingChatIndexResponse,
@@ -11,7 +12,7 @@ from app.api.v1.schemas import (
 )
 from app.auth.current_user import CurrentUser, require_current_user
 from app.services.ai_meetings import generate_meeting_intelligence
-from app.services.bot_manual_join import manual_join_meeting
+from app.services.bot_manual_join import leave_manual_meeting_bot, manual_join_meeting
 from app.services.meeting_chat import (
     chat_with_meeting_transcript,
     get_meeting_chat_index_status,
@@ -41,8 +42,18 @@ async def list_meetings(
     }
 
 @router.post("/manual-join", response_model=ManualJoinResponse)
-async def create_manual_join(payload: ManualJoinRequest) -> dict:
-    return await manual_join_meeting(payload)
+async def create_manual_join(
+    payload: ManualJoinRequest,
+    current_user: CurrentUser = require_current_user,
+) -> dict:
+    return await manual_join_meeting(payload, current_user.user_id)
+
+@router.post("/{meeting_id}/bot/leave", response_model=BotLeaveResponse)
+async def leave_meeting_bot(
+    meeting_id: str,
+    current_user: CurrentUser = require_current_user,
+) -> dict:
+    return await leave_manual_meeting_bot(meeting_id, current_user.user_id)
 
 @router.post("/uploads", response_model=UploadedRecordingResponse)
 async def upload_meeting_recording(

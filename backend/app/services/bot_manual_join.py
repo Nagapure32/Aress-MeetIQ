@@ -1,7 +1,8 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import re
 from typing import Any
 from urllib.parse import parse_qsl, unquote, urlsplit
+from uuid import uuid4
 
 import httpx
 from fastapi import HTTPException, status
@@ -11,17 +12,34 @@ from app.core.config import settings
 from app.db.supabase import supabase_gateway
 
 
-async def manual_join_meeting(payload: ManualJoinRequest) -> dict[str, Any]:
-    meeting = await _get_meeting(payload.meeting_id) if payload.meeting_id else None
-    bot_payload = _build_bot_join_payload(payload, meeting)
+MANUAL_LIVE_SOURCE_TYPE = "manual_live"
+MANUAL_LIVE_DURATION_MINUTES = 60
 
-    result = await _call_bot_join_endpoint(bot_payload)
-    if meeting:
-        await _mark_meeting_joining(meeting["id"])
+
+async def manual_join_meeting(payload: ManualJoinRequest, user_id: str) -> dict[str, Any]:
+    meeting = await _get_meeting(payload.meeting_id, user_id) if payload.meeting_id else None
+    bot_payload = _build_bot_join_payload(payload, meeting)
+    created_manual_meeting = False
+    if not meeting:
+        meeting = await _create_manual_live_meeting(user_id, bot_payload)
+        created_manual_meeting = True
+
+    bot_payload["platformMeetingId"] = meeting["id"]
+    try:
+        result = await _call_bot_join_endpoint(bot_payload)
+    except HTTPException:
+        if created_manual_meeting:
+            try:
+                await _mark_meeting_join_failed(meeting["id"])
+            except Exception:
+                pass
+        raise
+
+    await _mark_meeting_joining(meeting["id"])
 
     return {
         "status": "accepted",
-        "meeting_id": meeting["id"] if meeting else None,
+        "meeting_id": meeting["id"],
         "call_id": result.get("callId"),
         "state": result.get("state"),
         "join_mode": result.get("joinMode"),
@@ -30,12 +48,49 @@ async def manual_join_meeting(payload: ManualJoinRequest) -> dict[str, Any]:
     }
 
 
-async def _get_meeting(meeting_id: str | None) -> dict[str, Any]:
+async def leave_manual_meeting_bot(meeting_id: str, user_id: str) -> dict[str, Any]:
+    meeting = await _get_meeting(meeting_id, user_id)
+    if meeting.get("source_type") != MANUAL_LIVE_SOURCE_TYPE:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Bot removal is only available for manually joined meetings.",
+        )
+
+    bot_status = str(meeting.get("bot_status") or "").lower()
+    if bot_status in {"left", "completed", "failed", "not_started", "not_applicable"}:
+        return {
+            "status": "accepted",
+            "meeting_id": meeting_id,
+            "state": bot_status,
+            "message": "The bot is not active in this manual meeting.",
+        }
+
+    await _mark_meeting_leaving(meeting_id)
+    try:
+        result = await _call_bot_leave_endpoint(meeting_id)
+    except HTTPException:
+        try:
+            await _mark_meeting_leave_failed(meeting_id)
+        except Exception:
+            pass
+        raise
+
+    await _mark_meeting_left(meeting_id)
+    return {
+        "status": "accepted",
+        "meeting_id": meeting_id,
+        "state": result.get("state"),
+        "message": result.get("message") or "Bot removal request was accepted.",
+    }
+
+
+async def _get_meeting(meeting_id: str | None, user_id: str) -> dict[str, Any]:
     rows = await supabase_gateway.get(
         "meetings",
         {
-            "select": "id,join_url,bot_status,status",
+            "select": "id,user_id,join_url,bot_status,status,source_type",
             "id": f"eq.{meeting_id}",
+            "user_id": f"eq.{user_id}",
             "limit": "1",
         },
     )
@@ -72,6 +127,36 @@ def _build_bot_join_payload(
     return bot_payload
 
 
+async def _create_manual_live_meeting(user_id: str, bot_payload: dict[str, Any]) -> dict[str, Any]:
+    start_time = datetime.now(UTC)
+    now = start_time.isoformat()
+    rows = await supabase_gateway.insert(
+        "meetings",
+        {
+            "user_id": user_id,
+            "graph_event_id": f"manual:{uuid4()}",
+            "subject": "Manual Teams meeting",
+            "organizer_email": None,
+            "join_url": bot_payload.get("joinWebUrl"),
+            "start_time": start_time.isoformat(),
+            "end_time": (start_time + timedelta(minutes=MANUAL_LIVE_DURATION_MINUTES)).isoformat(),
+            "status": "joining",
+            "bot_status": "joining",
+            "approval_status": "not_required",
+            "source_type": MANUAL_LIVE_SOURCE_TYPE,
+            "processing_status": "not_started",
+            "created_at": now,
+            "updated_at": now,
+        },
+    )
+    if not rows:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Supabase did not return the manual meeting.",
+        )
+    return rows[0]
+
+
 async def _call_bot_join_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
     if not settings.teams_bot_base_url:
         raise HTTPException(
@@ -100,12 +185,91 @@ async def _call_bot_join_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
+async def _call_bot_leave_endpoint(meeting_id: str) -> dict[str, Any]:
+    if not settings.teams_bot_base_url:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="TEAMS_BOT_BASE_URL is not configured.",
+        )
+
+    headers = {"Authorization": f"Bearer {settings.bot_internal_api_key}"} if settings.bot_internal_api_key else {}
+    url = f"{settings.teams_bot_base_url.rstrip('/')}/api/leave"
+    payload = {"platformMeetingId": meeting_id}
+
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            response = await client.post(url, json=payload, headers=headers)
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="The Teams bot leave endpoint could not be reached.",
+        ) from exc
+
+    data = _safe_json(response)
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=data.get("error") or data.get("message") or "The Teams bot rejected leave request.",
+        )
+    return data
+
+
 async def _mark_meeting_joining(meeting_id: str) -> None:
     await supabase_gateway.patch(
         "meetings",
         {
             "bot_status": "joining",
             "status": "joining",
+            "updated_at": datetime.now(UTC).isoformat(),
+        },
+        params={"id": f"eq.{meeting_id}", "limit": "1"},
+    )
+
+
+async def _mark_meeting_leaving(meeting_id: str) -> None:
+    await supabase_gateway.patch(
+        "meetings",
+        {
+            "bot_status": "leaving",
+            "status": "leaving",
+            "updated_at": datetime.now(UTC).isoformat(),
+        },
+        params={"id": f"eq.{meeting_id}", "limit": "1"},
+    )
+
+
+async def _mark_meeting_left(meeting_id: str) -> None:
+    now = datetime.now(UTC).isoformat()
+    await supabase_gateway.patch(
+        "meetings",
+        {
+            "bot_status": "left",
+            "status": "completed",
+            "end_time": now,
+            "updated_at": now,
+        },
+        params={"id": f"eq.{meeting_id}", "limit": "1"},
+    )
+
+
+async def _mark_meeting_leave_failed(meeting_id: str) -> None:
+    await supabase_gateway.patch(
+        "meetings",
+        {
+            "bot_status": "leave_failed",
+            "status": "leave_failed",
+            "updated_at": datetime.now(UTC).isoformat(),
+        },
+        params={"id": f"eq.{meeting_id}", "limit": "1"},
+    )
+
+
+async def _mark_meeting_join_failed(meeting_id: str) -> None:
+    await supabase_gateway.patch(
+        "meetings",
+        {
+            "bot_status": "failed",
+            "status": "join_failed",
             "updated_at": datetime.now(UTC).isoformat(),
         },
         params={"id": f"eq.{meeting_id}", "limit": "1"},

@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { EmptyBlock } from "@/components/ui";
 import type { Meeting } from "@/lib/api";
 import { getCurrentMeetingStatus } from "@/lib/dashboard-ui";
+import { getMeetingSourceLabel, isUploadedMeetingSource } from "@/lib/meeting-source";
 
 const PAGE_SIZE = 10;
 type MeetingFilter = "all" | "upcoming" | "completed" | "transcript_ready";
@@ -163,16 +164,14 @@ function MeetingRow({ meeting }: { meeting: Meeting }) {
       </div>
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-2">
-          {meeting.source_type === "upload" ? (
+          {isUploadedMeetingSource(meeting.source_type) ? (
             <FileText size={13} className="shrink-0 text-brand-dark" />
           ) : (
             <Video size={13} className="shrink-0 text-muted" />
           )}
           <p className="truncate text-sm font-medium text-ink">{meeting.subject}</p>
         </div>
-        <p className="mt-1 truncate text-xs text-muted">
-          {meeting.source_type === "upload" ? "Uploaded recording" : "Calendar meeting"}
-        </p>
+        <p className="mt-1 truncate text-xs text-muted">{getMeetingSourceLabel(meeting.source_type)}</p>
       </div>
       <span className="inline-flex items-center gap-2 text-xs text-muted" title={currentStatus.label}>
         <span className={`size-2.5 rounded-full ${meetingStatusDotClass(statusColor)}`} aria-hidden="true" />
@@ -275,7 +274,7 @@ function filterMeetings(meetings: Meeting[], filter: MeetingFilter) {
 
 function meetingStatusColor(value: string): "blue" | "orange" | "grey" {
   const normalized = value.toLowerCase();
-  if (["joining", "recording", "processing", "in_progress"].includes(normalized)) {
+  if (["joining", "recording", "processing", "in_progress", "leaving"].includes(normalized)) {
     return "blue";
   }
   if (
@@ -291,6 +290,7 @@ function meetingStatusColor(value: string): "blue" | "orange" | "grey" {
       "rejected",
       "expired",
       "not_connected",
+      "leave_failed",
     ].includes(normalized)
   ) {
     return "orange";

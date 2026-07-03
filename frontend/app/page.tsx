@@ -17,6 +17,7 @@ import { AppShell } from "@/components/app-shell";
 import { StatusPill } from "@/components/ui";
 import { UploadRecordingControl } from "@/components/upload-recording-control";
 import { DashboardOverview, getDashboard, listTasks, type TaskItem } from "@/lib/api";
+import { getMeetingSourceLabel } from "@/lib/meeting-source";
 import { DashboardGreeting } from "./dashboard-greeting";
 import {
   buildDashboardSearchItems,
@@ -136,7 +137,7 @@ export default async function DashboardPage() {
                         <div className="min-w-0">
                           <p className="truncate text-sm font-medium text-ink">{meeting.subject}</p>
                           <p className="mt-1 text-xs text-muted">
-                            Calendar meeting
+                            {getMeetingSourceLabel(meeting.source_type)}
                           </p>
                         </div>
                         <div className="flex items-start justify-end">
@@ -445,4 +446,3 @@ function formatDateTime(value: string) {
 function shortId(value: string) {
   return value.length > 8 ? value.slice(0, 8) : value;
 }
-

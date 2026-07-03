@@ -18,7 +18,7 @@ async def get_dashboard_overview(user_id: str | None = None) -> DashboardOvervie
     meetings_today = await _get_rows(
         "meetings",
         {
-            "select": "id,subject,start_time,end_time,bot_status,approval_status,organizer_email",
+            "select": "id,subject,start_time,end_time,bot_status,approval_status,organizer_email,source_type",
             "user_id": f"eq.{user_id}",
             "start_time": f"gte.{today_start.isoformat()}",
             "end_time": f"lt.{tomorrow_start.isoformat()}",
@@ -37,7 +37,7 @@ async def get_dashboard_overview(user_id: str | None = None) -> DashboardOvervie
     upcoming_meetings = await _get_rows(
         "meetings",
         {
-            "select": "id,subject,start_time,end_time,bot_status,approval_status,organizer_email",
+            "select": "id,subject,start_time,end_time,bot_status,approval_status,organizer_email,source_type",
             "user_id": f"eq.{user_id}",
             "end_time": f"gte.{now.isoformat()}",
             "order": "start_time.asc",

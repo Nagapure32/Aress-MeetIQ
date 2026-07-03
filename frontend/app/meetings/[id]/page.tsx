@@ -11,8 +11,10 @@ import {
   getMeetingTranscript,
 } from "@/lib/api";
 import { formatStatusLabel, getCurrentMeetingStatus } from "@/lib/dashboard-ui";
+import { getMeetingSourceLabel } from "@/lib/meeting-source";
 import { buildMeetingTaskPrefill } from "@/lib/meeting-task-prefill";
 import { MeetingAIActions } from "./meeting-ai-actions";
+import { MeetingBotControls } from "./meeting-bot-controls";
 import { MeetingTaskCreator } from "./meeting-task-creator";
 import { MeetingTranscriptTabs } from "./meeting-transcript-tabs";
 
@@ -48,16 +50,17 @@ export default async function MeetingDetailPage({ params }: Props) {
       <div className="flex h-[calc(100vh+96px)] min-h-0 flex-col overflow-hidden p-6">
         <PageHeader
           title={meeting.subject}
-          subtitle={`${formatDateTime(meeting.start_time)} - ${
-            meeting.source_type === "upload" ? "Uploaded recording" : "Calendar meeting"
-          }`}
+          subtitle={`${formatDateTime(meeting.start_time)} - ${getMeetingSourceLabel(meeting.source_type)}`}
           action={
-            <Link
-              href="/meetings"
-              className="rounded-[10px] border border-line bg-white px-3 py-2 text-xs font-medium text-ink"
-            >
-              Back to meetings
-            </Link>
+            <div className="flex flex-wrap items-start justify-end gap-3">
+              <MeetingBotControls meeting={meeting} />
+              <Link
+                href="/meetings"
+                className="rounded-[10px] border border-line bg-white px-3 py-2 text-xs font-medium text-ink"
+              >
+                Back to meetings
+              </Link>
+            </div>
           }
         />
 

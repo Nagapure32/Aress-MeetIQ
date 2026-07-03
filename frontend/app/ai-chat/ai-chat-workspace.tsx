@@ -4,6 +4,7 @@ import { FileText, Search, Video } from "lucide-react";
 import { useMemo, useState } from "react";
 import { EmptyBlock } from "@/components/ui";
 import type { Meeting } from "@/lib/api";
+import { isUploadedMeetingSource } from "@/lib/meeting-source";
 import { MeetingChatPanel } from "@/app/meetings/[id]/meeting-chat-panel";
 
 const chatDateFormatter = new Intl.DateTimeFormat("en-IN", {
@@ -82,7 +83,7 @@ export function AiChatWorkspace({ meetings }: { meetings: Meeting[] }) {
                   }`}
                 >
                   <span className="mt-0.5 text-muted">
-                    {meeting.source_type === "upload" ? <FileText size={14} /> : <Video size={14} />}
+                    {isUploadedMeetingSource(meeting.source_type) ? <FileText size={14} /> : <Video size={14} />}
                   </span>
                   <span className="min-w-0">
                     <span className="block truncate text-sm font-medium text-ink">{meeting.subject}</span>

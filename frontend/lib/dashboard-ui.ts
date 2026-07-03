@@ -37,12 +37,13 @@ const warningStatuses = new Set([
   "expired",
   "need attention",
   "not_connected",
+  "leave_failed",
 ]);
 
-const goodStatuses = new Set(["online", "ready", "approved", "done", "completed", "success"]);
-const brandStatuses = new Set(["joining", "recording", "processing", "in_progress"]);
-const activeBotStatuses = new Set(["joining", "recording", "processing", "in_progress"]);
-const inactiveBotStatuses = new Set(["not_started", "idle", "none"]);
+const goodStatuses = new Set(["online", "ready", "approved", "done", "completed", "success", "left"]);
+const brandStatuses = new Set(["joining", "recording", "processing", "in_progress", "leaving"]);
+const activeBotStatuses = new Set(["joining", "recording", "processing", "in_progress", "leaving"]);
+const inactiveBotStatuses = new Set(["not_started", "idle", "none", "left"]);
 const terminalApprovalStatuses = new Set(["rejected", "expired"]);
 
 export function buildDashboardSearchItems(

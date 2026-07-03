@@ -73,6 +73,13 @@ class ManualJoinResponse(BaseModel):
     message: str
 
 
+class BotLeaveResponse(BaseModel):
+    status: str
+    meeting_id: str
+    state: str | None = None
+    message: str
+
+
 class UploadedRecordingJob(BaseModel):
     id: str
     meeting_id: str
