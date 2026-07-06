@@ -21,6 +21,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate Azure credentials secret
+        shell: bash
+        env:
+          AZURE_CREDENTIALS_JSON: ${{ secrets.AZURE_CREDENTIALS }}
+        run: |
+          set -euo pipefail
+          if [ -z "${AZURE_CREDENTIALS_JSON}" ]; then
+            echo "::error::AZURE_CREDENTIALS is empty or unavailable. Add it as a repository secret, or attach the GitHub environment that contains it to this job."
+            exit 1
+          fi
+          if ! echo "${AZURE_CREDENTIALS_JSON}" | jq -e . >/dev/null; then
+            echo "::error::AZURE_CREDENTIALS is not valid JSON. Paste one JSON object into the secret value."
+            exit 1
+          fi
+          for key in clientId clientSecret subscriptionId tenantId; do
+            if [ "$(echo "${AZURE_CREDENTIALS_JSON}" | jq -r --arg key "$key" '.[$key] // empty')" = "" ]; then
+              echo "::error::AZURE_CREDENTIALS is missing ${key}."
+              exit 1
+            fi
+          done
+          echo "AZURE_CREDENTIALS secret is present and has the required JSON keys."
+
       - name: Azure login
         uses: azure/login@v2
         with:
