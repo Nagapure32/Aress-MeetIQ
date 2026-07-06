@@ -21,32 +21,42 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Validate Azure credentials secret
+      - name: Validate Azure credentials secrets
         shell: bash
         env:
-          AZURE_CREDENTIALS_JSON: ${{ secrets.AZURE_CREDENTIALS }}
+          CLIENTID: ${{ secrets.CLIENTID }}
+          CLIENTSECRET: ${{ secrets.CLIENTSECRET }}
+          SUBSCRIPTIONID: ${{ secrets.SUBSCRIPTIONID }}
+          TENANTID: ${{ secrets.TENANTID }}
         run: |
           set -euo pipefail
-          if [ -z "${AZURE_CREDENTIALS_JSON}" ]; then
-            echo "::error::AZURE_CREDENTIALS is empty or unavailable. Add it as a repository secret, or attach the GitHub environment that contains it to this job."
-            exit 1
-          fi
-          if ! echo "${AZURE_CREDENTIALS_JSON}" | jq -e . >/dev/null; then
-            echo "::error::AZURE_CREDENTIALS is not valid JSON. Paste one JSON object into the secret value."
-            exit 1
-          fi
-          for key in clientId clientSecret subscriptionId tenantId; do
-            if [ "$(echo "${AZURE_CREDENTIALS_JSON}" | jq -r --arg key "$key" '.[$key] // empty')" = "" ]; then
-              echo "::error::AZURE_CREDENTIALS is missing ${key}."
-              exit 1
+          missing=()
+          for key in CLIENTID CLIENTSECRET SUBSCRIPTIONID TENANTID; do
+            if [ -z "${!key}" ]; then
+              missing+=("$key")
             fi
           done
-          echo "AZURE_CREDENTIALS secret is present and has the required JSON keys."
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::Missing repository secrets: ${missing[*]}."
+            exit 1
+          fi
+          echo "Azure credential repository secrets are present."
 
       - name: Azure login
-        uses: azure/login@v2
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+        shell: bash
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.CLIENTID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.CLIENTSECRET }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.SUBSCRIPTIONID }}
+          AZURE_TENANT_ID: ${{ secrets.TENANTID }}
+        run: |
+          az login \
+            --service-principal \
+            --username "${AZURE_CLIENT_ID}" \
+            --password "${AZURE_CLIENT_SECRET}" \
+            --tenant "${AZURE_TENANT_ID}" \
+            --output none
+          az account set --subscription "${AZURE_SUBSCRIPTION_ID}"
 
       - name: Login to Azure Container Registry
         run: az acr login --name "${{ vars.ACR_NAME }}"
