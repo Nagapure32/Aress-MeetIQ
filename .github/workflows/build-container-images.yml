@@ -50,13 +50,20 @@ jobs:
           AZURE_SUBSCRIPTION_ID: ${{ secrets.SUBSCRIPTIONID }}
           AZURE_TENANT_ID: ${{ secrets.TENANTID }}
         run: |
+          clean_secret() {
+            printf '%s' "$1" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+          }
+          CLIENT_ID="$(clean_secret "${AZURE_CLIENT_ID}")"
+          CLIENT_SECRET="$(clean_secret "${AZURE_CLIENT_SECRET}")"
+          SUBSCRIPTION_ID="$(clean_secret "${AZURE_SUBSCRIPTION_ID}")"
+          TENANT_ID="$(clean_secret "${AZURE_TENANT_ID}")"
           az login \
             --service-principal \
-            --username "${AZURE_CLIENT_ID}" \
-            --password "${AZURE_CLIENT_SECRET}" \
-            --tenant "${AZURE_TENANT_ID}" \
+            --username "${CLIENT_ID}" \
+            --password "${CLIENT_SECRET}" \
+            --tenant "${TENANT_ID}" \
             --output none
-          az account set --subscription "${AZURE_SUBSCRIPTION_ID}"
+          az account set --subscription "${SUBSCRIPTION_ID}"
 
       - name: Login to Azure Container Registry
         run: az acr login --name "${{ vars.ACR_NAME }}"
