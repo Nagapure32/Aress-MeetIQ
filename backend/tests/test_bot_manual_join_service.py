@@ -162,6 +162,43 @@ def test_manual_join_extracts_meeting_id_and_passcode_from_join_url(monkeypatch)
     assert fake.inserts[0][1]["approval_status"] == "not_required"
 
 
+def test_manual_join_explicit_url_creates_manual_meeting_even_with_existing_meeting_id(monkeypatch):
+    from app.api.v1.schemas import ManualJoinRequest
+    from app.services import bot_manual_join
+
+    fake = FakeSupabaseGateway()
+    calls = []
+
+    async def fake_call(payload: dict) -> dict:
+        calls.append(payload)
+        return {"message": "accepted"}
+
+    monkeypatch.setattr(bot_manual_join, "supabase_gateway", fake)
+    monkeypatch.setattr(bot_manual_join.settings, "teams_bot_base_url", "http://bot.local")
+    monkeypatch.setattr(bot_manual_join, "_call_bot_join_endpoint", fake_call)
+
+    result = run(
+        bot_manual_join.manual_join_meeting(
+            ManualJoinRequest(
+                meeting_id="meeting-1",
+                join_web_url="https://teams.microsoft.com/l/meetup-join/manual",
+                use_service_hosted_media=False,
+            ),
+            "user-1",
+        )
+    )
+
+    assert result["meeting_id"] == "meeting-2"
+    assert calls == [
+        {
+            "joinWebUrl": "https://teams.microsoft.com/l/meetup-join/manual",
+            "platformMeetingId": "meeting-2",
+            "useServiceHostedMedia": False,
+        }
+    ]
+    assert fake.inserts[0][1]["source_type"] == "manual_live"
+
+
 def test_manual_join_uses_extracted_id_passcode_when_invite_text_has_no_url(monkeypatch):
     from app.api.v1.schemas import ManualJoinRequest
     from app.services import bot_manual_join

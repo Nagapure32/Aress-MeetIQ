@@ -17,7 +17,12 @@ MANUAL_LIVE_DURATION_MINUTES = 60
 
 
 async def manual_join_meeting(payload: ManualJoinRequest, user_id: str) -> dict[str, Any]:
-    meeting = await _get_meeting(payload.meeting_id, user_id) if payload.meeting_id else None
+    has_explicit_join_details = bool(_clean(payload.join_web_url) or _clean(payload.join_meeting_id))
+    meeting = (
+        await _get_meeting(payload.meeting_id, user_id)
+        if payload.meeting_id and not has_explicit_join_details
+        else None
+    )
     bot_payload = _build_bot_join_payload(payload, meeting)
     created_manual_meeting = False
     if not meeting:

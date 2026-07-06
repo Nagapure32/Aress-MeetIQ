@@ -17,7 +17,7 @@ export function ManualJoinControl({ meetings }: Props) {
     [meetings],
   );
   const [open, setOpen] = useState(false);
-  const [meetingId, setMeetingId] = useState(joinableMeetings[0]?.id ?? "");
+  const [meetingId, setMeetingId] = useState("");
   const [meetingIdentifier, setMeetingIdentifier] = useState("");
   const [passcode, setPasscode] = useState("");
   const [useServiceHostedMedia, setUseServiceHostedMedia] = useState(false);
@@ -41,7 +41,7 @@ export function ManualJoinControl({ meetings }: Props) {
     try {
       const identifierIsUrl = /^https?:\/\//i.test(identifier);
       const result = await manualJoinMeeting({
-        meeting_id: meetingId || null,
+        meeting_id: identifier ? null : meetingId || null,
         join_web_url: identifierIsUrl ? identifier : null,
         join_meeting_id: !identifierIsUrl && identifier ? identifier : null,
         passcode: passcode.trim() || null,
@@ -127,7 +127,12 @@ export function ManualJoinControl({ meetings }: Props) {
                 id="manual-join-identifier"
                 className="manual-join-input"
                 value={meetingIdentifier}
-                onChange={(event) => setMeetingIdentifier(event.target.value)}
+                onChange={(event) => {
+                  setMeetingIdentifier(event.target.value);
+                  if (event.target.value.trim()) {
+                    setMeetingId("");
+                  }
+                }}
                 placeholder="Paste Teams link or enter meeting ID"
                 aria-describedby="manual-join-identifier-help"
                 aria-invalid={Boolean(error && !meetingId && !meetingIdentifier.trim())}
