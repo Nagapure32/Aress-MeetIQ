@@ -14,6 +14,7 @@ from app.auth.current_user import CurrentUser
 from app.core.config import settings
 from app.db.supabase import supabase_gateway
 from app.services.meeting_settings import get_dev_user_id
+from app.services.shared_transcripts import resolve_transcript_source
 from app.services.transcript_security import decrypt_transcript_segments
 
 MAX_CHUNK_CHARS = 1800
@@ -281,14 +282,21 @@ async def index_meeting_transcript(
     current_user: CurrentUser | None = None,
 ) -> dict[str, Any]:
     _ensure_ai_chat_enabled()
+    transcript_meeting_id = meeting_id
     if current_user is not None:
-        await require_transcript_access(current_user, meeting_id)
+        transcript_meeting_id = await require_transcript_access(current_user, meeting_id)
         user_id = current_user.user_id
         meeting = await _get_meeting(meeting_id)
     else:
         user_id = user_id or get_dev_user_id()
         meeting = await _get_owned_meeting(meeting_id, user_id)
-    segments = await _get_transcript_segments(meeting_id)
+        resolution = await resolve_transcript_source(
+            supabase_gateway,
+            meeting_id,
+            user_id=user_id,
+        )
+        transcript_meeting_id = resolution.transcript_meeting_id
+    segments = await _get_transcript_segments(transcript_meeting_id)
     if not segments:
         result = await _store_index_status(
             meeting_id,
@@ -415,20 +423,27 @@ async def chat_with_meeting_transcript(
             detail="Message cannot be empty.",
         )
 
+    transcript_meeting_id = meeting_id
     if current_user is not None:
-        await require_transcript_access(current_user, meeting_id)
+        transcript_meeting_id = await require_transcript_access(current_user, meeting_id)
         user_id = current_user.user_id
         meeting = await _get_meeting(meeting_id)
     else:
         user_id = user_id or get_dev_user_id()
         meeting = await _get_owned_meeting(meeting_id, user_id)
+        resolution = await resolve_transcript_source(
+            supabase_gateway,
+            meeting_id,
+            user_id=user_id,
+        )
+        transcript_meeting_id = resolution.transcript_meeting_id
     route = _route_meeting_chat_question(question)
     routed_question = route.normalized_question or question
     if route.retrieval == "meeting_wide":
-        segments = await _get_transcript_segments(meeting_id)
+        segments = await _get_transcript_segments(transcript_meeting_id)
         focused_sources = _build_meeting_wide_sources(segments)
     elif route.retrieval == "person_focused":
-        segments = await _get_transcript_segments(meeting_id)
+        segments = await _get_transcript_segments(transcript_meeting_id)
         focused_sources = _build_person_focused_sources(route, segments)
     else:
         sources = await search_client.search_meeting_chunks(

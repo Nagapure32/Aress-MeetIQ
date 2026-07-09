@@ -41,6 +41,7 @@ class FakeSupabaseGateway:
                 {"id": "segment-1", "meeting_id": "meeting-with-transcript"},
                 {"id": "segment-2", "meeting_id": "meeting-with-transcript"},
             ],
+            "meeting_user_intents": [],
         }
 
     async def get(self, path: str, params: dict | None = None) -> list[dict]:
@@ -96,6 +97,167 @@ def test_list_user_meetings_can_filter_to_transcript_ready(monkeypatch):
 
     assert [meeting["id"] for meeting in result] == ["meeting-with-transcript"]
     assert result[0]["transcript_segment_count"] == 2
+
+
+def test_list_user_meetings_counts_shared_transcript_for_approved_intent(monkeypatch):
+    from app.services import meetings
+
+    fake = FakeSupabaseGateway()
+    fake.tables["meetings"] = [
+        {
+            "id": "approved-sibling",
+            "user_id": "user-1",
+            "subject": "Daily sync",
+            "start_time": "2026-07-09T05:30:00Z",
+            "end_time": "2026-07-09T05:45:00Z",
+            "status": "detected",
+            "bot_status": "not_started",
+            "approval_status": "Approved",
+        },
+        {
+            "id": "transcript-owner",
+            "user_id": "user-2",
+            "subject": "Daily sync",
+            "start_time": "2026-07-09T05:30:00Z",
+            "end_time": "2026-07-09T05:45:00Z",
+            "status": "detected",
+            "bot_status": "not_started",
+            "approval_status": "Approved",
+        },
+    ]
+    fake.tables["meeting_user_intents"] = [
+        {
+            "meeting_instance_id": "instance-1",
+            "meeting_id": "approved-sibling",
+            "user_id": "user-1",
+            "approval_status": "Approved",
+        },
+        {
+            "meeting_instance_id": "instance-1",
+            "meeting_id": "transcript-owner",
+            "user_id": "user-2",
+            "approval_status": "Approved",
+        },
+    ]
+    fake.tables["transcript_segments"] = [
+        {"id": "segment-1", "meeting_id": "transcript-owner"},
+        {"id": "segment-2", "meeting_id": "transcript-owner"},
+    ]
+    monkeypatch.setattr(meetings, "supabase_gateway", fake)
+    monkeypatch.setattr(meetings, "get_dev_user_id", lambda: "user-1")
+
+    result = run(meetings.list_user_meetings(transcript_ready=True))
+
+    assert [meeting["id"] for meeting in result] == ["approved-sibling"]
+    assert result[0]["transcript_segment_count"] == 2
+
+
+def test_list_user_meetings_does_not_count_shared_transcript_for_expired_intent(monkeypatch):
+    from app.services import meetings
+
+    fake = FakeSupabaseGateway()
+    fake.tables["meetings"] = [
+        {
+            "id": "expired-sibling",
+            "user_id": "user-1",
+            "subject": "Daily sync",
+            "start_time": "2026-07-09T05:30:00Z",
+            "end_time": "2026-07-09T05:45:00Z",
+            "status": "detected",
+            "bot_status": "not_started",
+            "approval_status": "Expired",
+        },
+        {
+            "id": "transcript-owner",
+            "user_id": "user-2",
+            "subject": "Daily sync",
+            "start_time": "2026-07-09T05:30:00Z",
+            "end_time": "2026-07-09T05:45:00Z",
+            "status": "detected",
+            "bot_status": "not_started",
+            "approval_status": "Approved",
+        },
+    ]
+    fake.tables["meeting_user_intents"] = [
+        {
+            "meeting_instance_id": "instance-1",
+            "meeting_id": "expired-sibling",
+            "user_id": "user-1",
+            "approval_status": "Expired",
+        },
+        {
+            "meeting_instance_id": "instance-1",
+            "meeting_id": "transcript-owner",
+            "user_id": "user-2",
+            "approval_status": "Approved",
+        },
+    ]
+    fake.tables["transcript_segments"] = [
+        {"id": "segment-1", "meeting_id": "transcript-owner"},
+    ]
+    monkeypatch.setattr(meetings, "supabase_gateway", fake)
+    monkeypatch.setattr(meetings, "get_dev_user_id", lambda: "user-1")
+
+    result = run(meetings.list_user_meetings(transcript_ready=True))
+
+    assert result == []
+
+
+def test_list_meeting_transcript_reads_shared_transcript_source(monkeypatch):
+    from app.services import meetings
+
+    fake = FakeSupabaseGateway()
+    fake.tables["meetings"] = [
+        {
+            "id": "approved-sibling",
+            "user_id": "user-1",
+            "subject": "Daily sync",
+            "start_time": "2026-07-09T05:30:00Z",
+            "end_time": "2026-07-09T05:45:00Z",
+            "status": "detected",
+            "bot_status": "not_started",
+            "approval_status": "Approved",
+        },
+        {
+            "id": "transcript-owner",
+            "user_id": "user-2",
+            "subject": "Daily sync",
+            "start_time": "2026-07-09T05:30:00Z",
+            "end_time": "2026-07-09T05:45:00Z",
+            "status": "detected",
+            "bot_status": "not_started",
+            "approval_status": "Approved",
+        },
+    ]
+    fake.tables["meeting_user_intents"] = [
+        {
+            "meeting_instance_id": "instance-1",
+            "meeting_id": "approved-sibling",
+            "user_id": "user-1",
+            "approval_status": "Approved",
+        },
+        {
+            "meeting_instance_id": "instance-1",
+            "meeting_id": "transcript-owner",
+            "user_id": "user-2",
+            "approval_status": "Approved",
+        },
+    ]
+    fake.tables["transcript_segments"] = [
+        {
+            "id": "segment-1",
+            "meeting_id": "transcript-owner",
+            "speaker": "Asha",
+            "text": "Shared transcript line.",
+            "created_at": "2026-07-09T05:35:00Z",
+        }
+    ]
+    monkeypatch.setattr(meetings, "supabase_gateway", fake)
+
+    result = run(meetings.list_meeting_transcript("approved-sibling", user_id="user-1"))
+
+    assert [segment["id"] for segment in result] == ["segment-1"]
+    assert result[0]["text"] == "Shared transcript line."
 
 
 def test_list_meeting_transcript_orders_by_sequence_then_timestamps(monkeypatch):

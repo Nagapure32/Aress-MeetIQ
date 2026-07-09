@@ -17,6 +17,7 @@ class FakeSupabaseGateway:
             "action_items": [],
             "tasks": [],
             "task_assignees": [],
+            "meeting_user_intents": [],
         }
 
     async def get(self, path: str, params: dict | None = None) -> list[dict]:
@@ -266,6 +267,66 @@ def test_generate_meeting_intelligence_creates_tasks_for_calendar_user(monkeypat
     assert fake.tables["tasks"][0]["notification_status"] == "missing_recipient"
     assert fake.tables["tasks"][0]["meeting_id"] == "meeting-1"
     assert fake.tables["task_assignees"] == []
+
+
+def test_generate_meeting_intelligence_uses_shared_transcript_source(monkeypatch):
+    from app.services import ai_meetings
+
+    fake = FakeSupabaseGateway()
+    captured_segment_ids = []
+    fake.tables["meetings"] = [
+        {
+            "id": "approved-sibling",
+            "user_id": "calendar-user-1",
+            "subject": "Daily sync",
+        },
+        {
+            "id": "transcript-owner",
+            "user_id": "calendar-user-2",
+            "subject": "Daily sync",
+        },
+    ]
+    fake.tables["meeting_user_intents"] = [
+        {
+            "meeting_instance_id": "instance-1",
+            "meeting_id": "approved-sibling",
+            "user_id": "calendar-user-1",
+            "approval_status": "Approved",
+        },
+        {
+            "meeting_instance_id": "instance-1",
+            "meeting_id": "transcript-owner",
+            "user_id": "calendar-user-2",
+            "approval_status": "Approved",
+        },
+    ]
+    fake.tables["transcript_segments"] = [
+        {
+            "id": "segment-1",
+            "meeting_id": "transcript-owner",
+            "speaker": "Asha",
+            "text": "Shared transcript line.",
+            "created_at": "2026-07-09T05:35:00Z",
+        }
+    ]
+
+    def fake_agent(_meeting, transcript_segments):
+        captured_segment_ids.extend(segment["id"] for segment in transcript_segments)
+        return ai_meetings.MeetingAIResult(
+            summary="Shared transcript summarized.",
+            key_points=[],
+            decisions=[],
+            tasks=[],
+        )
+
+    monkeypatch.setattr(ai_meetings, "supabase_gateway", fake)
+    monkeypatch.setattr(ai_meetings, "_run_agno_meeting_agent", fake_agent)
+
+    result = run(ai_meetings.generate_meeting_intelligence("approved-sibling"))
+
+    assert captured_segment_ids == ["segment-1"]
+    assert result["meeting_id"] == "approved-sibling"
+    assert fake.tables["meeting_summaries"][0]["meeting_id"] == "approved-sibling"
 
 
 def test_generate_meeting_intelligence_encrypts_generated_summary_and_tasks(monkeypatch):

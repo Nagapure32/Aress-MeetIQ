@@ -11,6 +11,7 @@ class FakeSupabaseGateway:
             "transcript_segments": [],
             "ai_chat_messages": [],
             "meeting_ai_indexes": [],
+            "meeting_user_intents": [],
         }
 
     async def get(self, path: str, params: dict | None = None) -> list[dict]:
@@ -24,6 +25,9 @@ class FakeSupabaseGateway:
             if isinstance(value, str) and value.startswith("eq."):
                 expected = value[3:]
                 rows = [row for row in rows if str(row.get(key)) == expected]
+            if isinstance(value, str) and value.startswith("in.("):
+                expected_values = value[4:-1].split(",")
+                rows = [row for row in rows if str(row.get(key)) in expected_values]
 
         if params.get("limit"):
             rows = rows[: int(params["limit"])]
@@ -128,6 +132,54 @@ def test_index_meeting_transcript_uploads_meeting_scoped_chunks(monkeypatch):
     assert fake_search.uploaded_documents[0]["user_id"] == "user-1"
     assert fake_search.uploaded_documents[0]["source_segment_ids"] == ["segment-1", "segment-2"]
     assert fake_db.tables["meeting_ai_indexes"][0]["status"] == "ready"
+
+
+def test_index_meeting_transcript_uses_shared_transcript_source(monkeypatch):
+    from app.services import meeting_chat
+
+    fake_db = FakeSupabaseGateway()
+    fake_search = FakeSearchClient()
+    fake_db.tables["meetings"] = [
+        {
+            "id": "approved-sibling",
+            "user_id": "user-1",
+            "subject": "Daily sync",
+        }
+    ]
+    fake_db.tables["meeting_user_intents"] = [
+        {
+            "meeting_instance_id": "instance-1",
+            "meeting_id": "approved-sibling",
+            "user_id": "user-1",
+            "approval_status": "Approved",
+        },
+        {
+            "meeting_instance_id": "instance-1",
+            "meeting_id": "transcript-owner",
+            "user_id": "user-2",
+            "approval_status": "Approved",
+        },
+    ]
+    fake_db.tables["transcript_segments"] = [
+        {
+            "id": "segment-1",
+            "meeting_id": "transcript-owner",
+            "speaker": "Asha",
+            "text": "The shared transcript is available.",
+            "created_at": "2026-07-09T05:35:00Z",
+        }
+    ]
+    monkeypatch.setattr(meeting_chat, "supabase_gateway", fake_db)
+    monkeypatch.setattr(meeting_chat, "get_dev_user_id", lambda: "user-1")
+    monkeypatch.setattr(meeting_chat, "search_client", fake_search)
+    monkeypatch.setattr(meeting_chat, "_ensure_ai_chat_enabled", lambda: None)
+
+    result = run(meeting_chat.index_meeting_transcript("approved-sibling"))
+
+    assert result["status"] == "ready"
+    assert result["transcript_segment_count"] == 1
+    assert fake_search.uploaded_documents[0]["meeting_id"] == "approved-sibling"
+    assert fake_search.uploaded_documents[0]["source_segment_ids"] == ["segment-1"]
 
 
 def test_ensure_index_does_not_update_existing_search_index():

@@ -23,6 +23,7 @@ from app.services.meeting_content_security import (
     protect_task_content,
     title_lookup_keys,
 )
+from app.services.shared_transcripts import resolve_transcript_source
 from app.services.task_email import TaskEmailResult, send_task_assignment_email
 from app.services.transcript_security import decrypt_transcript_segments
 
@@ -99,11 +100,19 @@ async def generate_meeting_intelligence(
     user_id: str | None = None,
     current_user: CurrentUser | None = None,
 ) -> dict[str, Any]:
+    transcript_meeting_id = meeting_id
     if current_user is not None:
-        await require_transcript_access(current_user, meeting_id)
+        transcript_meeting_id = await require_transcript_access(current_user, meeting_id)
         user_id = current_user.user_id
     meeting = await _get_meeting_for_ai(meeting_id, user_id)
-    transcript_segments = await _get_transcript_segments(meeting_id)
+    if current_user is None:
+        resolution = await resolve_transcript_source(
+            supabase_gateway,
+            meeting_id,
+            user_id=user_id or meeting.get("user_id"),
+        )
+        transcript_meeting_id = resolution.transcript_meeting_id
+    transcript_segments = await _get_transcript_segments(transcript_meeting_id)
     if not transcript_segments:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -111,7 +120,7 @@ async def generate_meeting_intelligence(
         )
 
     ai_result = _run_agno_meeting_agent(meeting, transcript_segments)
-    participants = await _get_meeting_participants(meeting_id)
+    participants = await _get_meeting_participants(transcript_meeting_id)
     profiles = await _get_profiles_for_participants(participants)
     summary = await _store_summary(meeting_id, ai_result)
     action_items, created_count, skipped_action_items_count = await _store_action_items(
